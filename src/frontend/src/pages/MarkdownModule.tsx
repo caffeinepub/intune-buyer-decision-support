@@ -1,0 +1,299 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { AlertTriangle, Scissors } from "lucide-react";
+import { motion } from "motion/react";
+import { useMemo } from "react";
+import { Layout } from "../components/Layout";
+import { useData } from "../context/DataContext";
+
+function getMarkdown(ros: number, cover: number) {
+  if (ros < 4 && cover > 12) return { pct: 30, risk: "High" as const };
+  if (ros < 7 && cover > 8) return { pct: 15, risk: "Medium" as const };
+  return { pct: 0, risk: "None" as const };
+}
+
+export function MarkdownModule() {
+  const { filteredKPIs } = useData();
+
+  const atRisk = useMemo(() => {
+    return filteredKPIs
+      .map((k) => ({
+        ...k,
+        ...getMarkdown(k.ros, k.inventoryCoverWeeks),
+      }))
+      .filter((k) => k.pct > 0);
+  }, [filteredKPIs]);
+
+  const totalAtRisk = atRisk.length;
+  const avgMarkdownPct =
+    totalAtRisk > 0
+      ? Math.round(atRisk.reduce((s, k) => s + k.pct, 0) / totalAtRisk)
+      : 0;
+  const totalCoverWeeks = atRisk.reduce((s, k) => s + k.inventoryCoverWeeks, 0);
+
+  const kpiCards = [
+    {
+      label: "Styles at Markdown Risk",
+      value: totalAtRisk.toString(),
+      sub: "Require price intervention",
+      color: "#b91c1c",
+      bg: "#fee2e2",
+    },
+    {
+      label: "Avg Recommended Markdown",
+      value: `${avgMarkdownPct}%`,
+      sub: "Average discount required",
+      color: "#b45309",
+      bg: "#fef3c7",
+    },
+    {
+      label: "Total Cover Weeks at Risk",
+      value: totalCoverWeeks.toFixed(0),
+      sub: "Weeks of excess inventory",
+      color: "#7c3aed",
+      bg: "#ede9fe",
+    },
+  ];
+
+  return (
+    <Layout title="Markdown Risk Module">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {kpiCards.map((card, i) => (
+          <motion.div
+            key={card.label}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.08 }}
+          >
+            <Card
+              className="shadow-card border-0"
+              data-ocid={`markdown.card.${i + 1}`}
+            >
+              <CardContent className="pt-5 pb-5">
+                <p className="text-xs font-medium" style={{ color: "#64748b" }}>
+                  {card.label}
+                </p>
+                <p
+                  className="text-3xl font-bold mt-1"
+                  style={{ color: card.color }}
+                >
+                  {card.value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+                  {card.sub}
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.28 }}
+      >
+        <Card className="shadow-card border-0 mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle
+              className="text-sm font-semibold flex items-center gap-2"
+              style={{ color: "#0f172a" }}
+            >
+              <Scissors className="w-4 h-4" style={{ color: "#b45309" }} />
+              Styles Requiring Markdown Action
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {atRisk.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center py-16 text-center"
+                data-ocid="markdown.empty_state"
+              >
+                <AlertTriangle
+                  className="w-10 h-10 mb-3"
+                  style={{ color: "#94a3b8" }}
+                />
+                <p className="text-sm font-medium" style={{ color: "#0f172a" }}>
+                  No styles at markdown risk
+                </p>
+                <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
+                  All styles have acceptable ROS and stock levels.
+                </p>
+              </div>
+            ) : (
+              <Table data-ocid="markdown.table">
+                <TableHeader>
+                  <TableRow style={{ background: "#f8fafc" }}>
+                    {[
+                      "Style Code",
+                      "Style Name",
+                      "Category",
+                      "ROS",
+                      "Stock Cover (wks)",
+                      "Risk",
+                      "Markdown %",
+                    ].map((h) => (
+                      <TableHead
+                        key={h}
+                        className="text-xs font-semibold"
+                        style={{ color: "#64748b" }}
+                      >
+                        {h}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {atRisk.map((k, idx) => (
+                    <TableRow
+                      key={`${k.styleCode}-${k.season}`}
+                      data-ocid={`markdown.item.${idx + 1}`}
+                      style={{
+                        background: idx % 2 === 1 ? "#f8fafc" : "white",
+                      }}
+                    >
+                      <TableCell
+                        className="text-xs font-bold"
+                        style={{ color: "#0f172a" }}
+                      >
+                        {k.styleCode}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs"
+                        style={{ color: "#334155" }}
+                      >
+                        {k.styleName}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs"
+                        style={{ color: "#64748b" }}
+                      >
+                        {k.category}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs font-semibold"
+                        style={{ color: "#0f172a" }}
+                      >
+                        {k.ros.toFixed(1)}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs"
+                        style={{ color: "#64748b" }}
+                      >
+                        {k.inventoryCoverWeeks.toFixed(1)}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{
+                            background:
+                              k.risk === "High" ? "#fee2e2" : "#fef3c7",
+                            color: k.risk === "High" ? "#b91c1c" : "#b45309",
+                          }}
+                        >
+                          {k.risk}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className="text-xs font-bold px-2.5 py-1 rounded-full"
+                          style={{
+                            background: k.pct === 30 ? "#b91c1c" : "#d97706",
+                            color: "white",
+                          }}
+                        >
+                          {k.pct}%
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Decision Rules Reference */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+      >
+        <Card
+          className="shadow-card border-0"
+          style={{ border: "1px solid #fde68a" }}
+        >
+          <CardHeader className="pb-3">
+            <CardTitle
+              className="text-sm font-semibold"
+              style={{ color: "#92400e" }}
+            >
+              Markdown Decision Rules — Reference
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: "#fef3c7" }}>
+                  <th
+                    className="text-left px-4 py-2 font-semibold"
+                    style={{ color: "#92400e" }}
+                  >
+                    Condition
+                  </th>
+                  <th
+                    className="text-left px-4 py-2 font-semibold"
+                    style={{ color: "#92400e" }}
+                  >
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    condition: "Low ROS (<4) + High Stock (>12 wks)",
+                    action: "30% discount — Clearance required",
+                  },
+                  {
+                    condition: "Medium ROS (4–7) + High Stock (>8 wks)",
+                    action: "10–20% discount — Stimulate sell-through",
+                  },
+                  {
+                    condition: "High ROS (≥7) — Strong performer",
+                    action: "No markdown needed — Focus on replenishment",
+                  },
+                ].map((row, i) => (
+                  <tr
+                    key={row.condition}
+                    style={{ background: i % 2 === 1 ? "#fffbeb" : "white" }}
+                  >
+                    <td
+                      className="px-4 py-2.5 font-medium"
+                      style={{ color: "#334155" }}
+                    >
+                      {row.condition}
+                    </td>
+                    <td className="px-4 py-2.5" style={{ color: "#64748b" }}>
+                      {row.action}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </Layout>
+  );
+}
