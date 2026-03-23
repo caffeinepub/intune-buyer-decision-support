@@ -16,6 +16,7 @@ export interface KPIResult {
   styleName: string;
   season: Season;
   category: Category;
+  vendor: string;
   ros: number; // Rate of Sale (units/week)
   inventoryCoverWeeks: number;
   grossMarginPct: number;
@@ -29,9 +30,9 @@ export interface SupplyChainResult {
   styleCode: string;
   styleName: string;
   season: Season;
+  vendor: string;
   vendorLeadTimeDays: number;
   seasonRunwayWeeks: number;
-  salesStabilityScore: number; // 0-100
   velocityProfile: VelocityProfile;
   decision:
     | "Immediate Re-buy Required"

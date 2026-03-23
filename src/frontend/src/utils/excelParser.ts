@@ -130,6 +130,20 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     "Department",
     "Class",
   );
+  const colVendor = findCol(
+    headers1,
+    "Vendor",
+    "VENDOR",
+    "vendor",
+    "Supplier",
+    "SUPPLIER",
+    "Brand",
+    "BRAND",
+    "Vendor Name",
+    "VENDOR NAME",
+    "Mfr",
+    "Manufacturer",
+  );
   const colBuyingScore = findCol(
     headers1,
     "Buying Score",
@@ -435,6 +449,8 @@ export async function parseExcelFile(file: File): Promise<AppData> {
         }
       }
 
+      const vendor = colVendor ? toStr(getVal(r, colVendor)) : "";
+
       return {
         styleCode:
           code ||
@@ -442,6 +458,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
         styleName: toStr(getVal(r, colStyleName)) || code,
         season: (toStr(getVal(r, colSeason)) || "Unknown") as string,
         category: (toStr(getVal(r, colCategory)) || "Uncategorised") as string,
+        vendor,
         ros,
         inventoryCoverWeeks: invCover,
         grossMarginPct: gm,
@@ -456,13 +473,6 @@ export async function parseExcelFile(file: File): Promise<AppData> {
   const allRosForVelocity = kpis.map((k) => k.ros);
   const supplyChain: SupplyChainResult[] = kpis.map((k) => {
     const velocity = velocityFromRos(k.ros, allRosForVelocity);
-    const stabilityScore = Math.min(
-      100,
-      Math.round(
-        k.buyingScore * 0.7 +
-          (velocity === "Fast" ? 30 : velocity === "Medium" ? 15 : 0),
-      ),
-    );
     const runwayWeeks =
       k.inventoryCoverWeeks > 0 ? Math.round(k.inventoryCoverWeeks) : 4;
     const leadTime = velocity === "Fast" ? 21 : velocity === "Medium" ? 28 : 42;
@@ -480,9 +490,9 @@ export async function parseExcelFile(file: File): Promise<AppData> {
       styleCode: k.styleCode,
       styleName: k.styleName,
       season: k.season,
+      vendor: k.vendor,
       vendorLeadTimeDays: leadTime,
       seasonRunwayWeeks: runwayWeeks,
-      salesStabilityScore: stabilityScore,
       velocityProfile: velocity,
       decision,
     };
@@ -510,6 +520,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     colStyleName && "Style Name",
     colSeason && "Season",
     colCategory && "Category",
+    colVendor && "Vendor",
     colBuyingScore && "Buying Score",
     colRebuyDecision && "Re-buy Decision",
     colROS && "ROS",

@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -17,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Brain, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import {
@@ -30,17 +29,208 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ClassificationBadge } from "../components/ClassificationBadge";
 import { Layout } from "../components/Layout";
 import { useData } from "../context/DataContext";
-import type { Classification, KPIResult } from "../types/index";
+import type { KPIResult } from "../types/index";
 
-const classColors: Record<Classification, string> = {
-  "Re-buy Candidate": "#16a34a",
-  Monitor: "#d97706",
-  "Do Not Re-buy": "#dc2626",
+// ── Derived metric helpers ──────────────────────────────────────────────────
+
+function getZoneAvgRos(k: KPIResult, allKPIs: KPIResult[]): number {
+  const zoneItems = allKPIs.filter((x) => x.category === k.category);
+  if (!zoneItems.length) return k.ros || 1;
+  const avg = zoneItems.reduce((s, x) => s + x.ros, 0) / zoneItems.length;
+  return avg || 1;
+}
+
+type PerfLabel = "High Performer" | "Stable" | "Low Performer";
+function getPerfIndex(
+  k: KPIResult,
+  allKPIs: KPIResult[],
+): { index: number; label: PerfLabel } {
+  const zoneAvg = getZoneAvgRos(k, allKPIs);
+  const index = zoneAvg > 0 ? +(k.ros / zoneAvg).toFixed(2) : 1;
+  const label: PerfLabel =
+    index > 1.2 ? "High Performer" : index >= 0.8 ? "Stable" : "Low Performer";
+  return { index, label };
+}
+
+function getRebuytrigger(
+  k: KPIResult,
+  allKPIs: KPIResult[],
+): "Triggered" | "Not Triggered" {
+  const zoneAvg = getZoneAvgRos(k, allKPIs);
+  return k.ros > zoneAvg * 1.1 ? "Triggered" : "Not Triggered";
+}
+
+type StockStatus = "Overstocked" | "Balanced" | "Understocked";
+function getStockStatus(k: KPIResult): StockStatus {
+  if (k.inventoryCoverWeeks > 10) return "Overstocked";
+  if (k.inventoryCoverWeeks >= 5) return "Balanced";
+  return "Understocked";
+}
+
+type ActionType = "Rebuy" | "Hold" | "Exit" | "Markdown";
+function getAction(k: KPIResult): ActionType {
+  if (k.inventoryCoverWeeks > 10 && k.ros < 4) return "Markdown";
+  if (k.classification === "Re-buy Candidate") return "Rebuy";
+  if (k.classification === "Do Not Re-buy") return "Exit";
+  return "Hold";
+}
+
+type Momentum = "Increasing" | "Stable" | "Declining";
+function getMomentum(k: KPIResult): Momentum {
+  if (k.ros >= 8 && k.inventoryCoverWeeks < 5) return "Increasing";
+  if (k.ros >= 4) return "Stable";
+  return "Declining";
+}
+
+type HealthLabel = "Healthy" | "Medium" | "Poor";
+function getHealthScore(k: KPIResult): { score: number; label: HealthLabel } {
+  const cover = Math.max(0.1, k.inventoryCoverWeeks);
+  const sellThrough = Math.min(1, 8 / (8 + cover));
+  const score = +(sellThrough * 0.6 + (1 / cover) * 0.4).toFixed(3);
+  const label: HealthLabel =
+    score >= 0.7 ? "Healthy" : score >= 0.4 ? "Medium" : "Poor";
+  return { score, label };
+}
+
+function getMarkdownPct(k: KPIResult): number {
+  if (k.ros < 2 && k.inventoryCoverWeeks > 12) return 30;
+  if (k.ros < 4 && k.inventoryCoverWeeks > 8) return 15;
+  if (k.ros < 4) return 10;
+  return 0;
+}
+
+function getRebuyQty(k: KPIResult): number {
+  if (k.classification !== "Re-buy Candidate") return 0;
+  return Math.round(k.ros * 4 * (k.buyingScore / 100) * 10) * 10;
+}
+
+function getSmartRecommendation(k: KPIResult, allKPIs: KPIResult[]): string {
+  const { label: perfLabel } = getPerfIndex(k, allKPIs);
+  const stock = getStockStatus(k);
+  const action = getAction(k);
+  if (perfLabel === "High Performer" && stock === "Understocked")
+    return "Strong performer with low cover — immediate replenishment required.";
+  if (perfLabel === "Low Performer" && stock === "Overstocked")
+    return "Slow moving with high stock — initiate markdown.";
+  if (perfLabel === "Stable" && action === "Rebuy")
+    return "Stable performance — controlled rebuy recommended.";
+  if (action === "Exit")
+    return "Weak velocity — recommend exit. Avoid further commitment.";
+  if (stock === "Overstocked")
+    return "High stock cover — monitor closely before any rebuy.";
+  if (perfLabel === "High Performer")
+    return "High performer — maintain supply to avoid stockout.";
+  return "Average performer — review trend before placing order.";
+}
+
+// ── Badge components ────────────────────────────────────────────────────────
+
+function PerfBadge({ label }: { label: PerfLabel }) {
+  const cfg = {
+    "High Performer": { bg: "#dcfce7", text: "#15803d" },
+    Stable: { bg: "#fef3c7", text: "#b45309" },
+    "Low Performer": { bg: "#fee2e2", text: "#b91c1c" },
+  }[label];
+  return (
+    <Badge
+      className="text-xs font-medium whitespace-nowrap"
+      style={{ background: cfg.bg, color: cfg.text, border: "none" }}
+    >
+      {label}
+    </Badge>
+  );
+}
+
+function TriggerBadge({ value }: { value: "Triggered" | "Not Triggered" }) {
+  return (
+    <Badge
+      className="text-xs font-medium whitespace-nowrap"
+      style={{
+        background: value === "Triggered" ? "#dcfce7" : "#f1f5f9",
+        color: value === "Triggered" ? "#15803d" : "#64748b",
+        border: "none",
+      }}
+    >
+      {value}
+    </Badge>
+  );
+}
+
+function StockBadge({ value }: { value: StockStatus }) {
+  const cfg = {
+    Overstocked: { bg: "#fee2e2", text: "#b91c1c" },
+    Balanced: { bg: "#dcfce7", text: "#15803d" },
+    Understocked: { bg: "#fef3c7", text: "#b45309" },
+  }[value];
+  return (
+    <Badge
+      className="text-xs font-medium whitespace-nowrap"
+      style={{ background: cfg.bg, color: cfg.text, border: "none" }}
+    >
+      {value}
+    </Badge>
+  );
+}
+
+function ActionBadge({ value }: { value: ActionType }) {
+  const cfg = {
+    Rebuy: { bg: "#dcfce7", text: "#15803d" },
+    Hold: { bg: "#e0f2fe", text: "#0369a1" },
+    Exit: { bg: "#fee2e2", text: "#b91c1c" },
+    Markdown: { bg: "#fef3c7", text: "#b45309" },
+  }[value];
+  return (
+    <Badge
+      className="text-xs font-semibold whitespace-nowrap"
+      style={{ background: cfg.bg, color: cfg.text, border: "none" }}
+    >
+      {value}
+    </Badge>
+  );
+}
+
+function MomentumBadge({ value }: { value: Momentum }) {
+  const cfg = {
+    Increasing: { bg: "#dcfce7", text: "#15803d", icon: "↑" },
+    Stable: { bg: "#fef3c7", text: "#b45309", icon: "→" },
+    Declining: { bg: "#fee2e2", text: "#b91c1c", icon: "↓" },
+  }[value];
+  return (
+    <Badge
+      className="text-xs font-medium whitespace-nowrap"
+      style={{ background: cfg.bg, color: cfg.text, border: "none" }}
+    >
+      {cfg.icon} {value}
+    </Badge>
+  );
+}
+
+function HealthBadge({ label }: { label: HealthLabel }) {
+  const cfg = {
+    Healthy: { bg: "#dcfce7", text: "#15803d" },
+    Medium: { bg: "#fef3c7", text: "#b45309" },
+    Poor: { bg: "#fee2e2", text: "#b91c1c" },
+  }[label];
+  return (
+    <Badge
+      className="text-xs font-medium"
+      style={{ background: cfg.bg, color: cfg.text, border: "none" }}
+    >
+      {label}
+    </Badge>
+  );
+}
+
+// ── Chart colours ───────────────────────────────────────────────────────────
+const BUCKET_COLORS: Record<string, string> = {
+  "0–20": "#dc2626",
+  "21–40": "#f97316",
+  "41–60": "#d97706",
+  "61–80": "#84cc16",
+  "81–100": "#16a34a",
 };
-
 const SCORE_BUCKETS = [
   { label: "0–20", min: 0, max: 20 },
   { label: "21–40", min: 21, max: 40 },
@@ -49,103 +239,11 @@ const SCORE_BUCKETS = [
   { label: "81–100", min: 81, max: 100 },
 ];
 
-type DecisionType = "Aggressive Rebuy" | "Moderate Rebuy" | "Exit";
-type RiskType = "High Risk" | "Medium" | "Low Risk";
-
-function getDecision(k: KPIResult): DecisionType {
-  if (k.classification === "Re-buy Candidate" && k.buyingScore >= 70)
-    return "Aggressive Rebuy";
-  if (
-    (k.classification === "Re-buy Candidate" && k.buyingScore < 70) ||
-    k.classification === "Monitor"
-  )
-    return "Moderate Rebuy";
-  return "Exit";
-}
-
-function getRisk(k: KPIResult): RiskType {
-  if (k.inventoryCoverWeeks > 12) return "High Risk";
-  if (k.inventoryCoverWeeks >= 6) return "Medium";
-  return "Low Risk";
-}
-
-function getRecommendation(k: KPIResult): string {
-  const risk = getRisk(k);
-  if (k.ros >= 8 && risk === "Low Risk")
-    return "High ROS with low cover — replenish immediately.";
-  if (k.ros >= 8 && risk === "Medium")
-    return "Good velocity — monitor stock levels.";
-  if (k.ros < 4 && risk === "High Risk")
-    return "Low sales and overstocked — consider markdown.";
-  if (k.ros < 4) return "Weak performer — recommend exit.";
-  return "Moderate performance — review before rebuy.";
-}
-
-function DecisionBadge({ value }: { value: DecisionType }) {
-  if (value === "Aggressive Rebuy")
-    return (
-      <Badge
-        className="text-xs font-medium"
-        style={{ background: "#dcfce7", color: "#15803d", border: "none" }}
-      >
-        Aggressive Rebuy
-      </Badge>
-    );
-  if (value === "Moderate Rebuy")
-    return (
-      <Badge
-        className="text-xs font-medium"
-        style={{ background: "#fef3c7", color: "#b45309", border: "none" }}
-      >
-        Moderate Rebuy
-      </Badge>
-    );
-  return (
-    <Badge
-      className="text-xs font-medium"
-      style={{ background: "#fee2e2", color: "#b91c1c", border: "none" }}
-    >
-      Exit
-    </Badge>
-  );
-}
-
-function RiskBadge({ value }: { value: RiskType }) {
-  if (value === "High Risk")
-    return (
-      <Badge
-        className="text-xs font-medium"
-        style={{ background: "#fee2e2", color: "#b91c1c", border: "none" }}
-      >
-        High Risk
-      </Badge>
-    );
-  if (value === "Medium")
-    return (
-      <Badge
-        className="text-xs font-medium"
-        style={{ background: "#fef3c7", color: "#b45309", border: "none" }}
-      >
-        Medium
-      </Badge>
-    );
-  return (
-    <Badge
-      className="text-xs font-medium"
-      style={{ background: "#dcfce7", color: "#15803d", border: "none" }}
-    >
-      Low Risk
-    </Badge>
-  );
-}
-
+// ── Main page ────────────────────────────────────────────────────────────────
 export function StyleAnalysis() {
   const { filteredKPIs } = useData();
-  const [sortBy, setSortBy] = useState<
-    "buyingScore" | "ros" | "grossMarginPct"
-  >("buyingScore");
-  const [classFilter, setClassFilter] = useState("all");
-  const [decisionFilter, setDecisionFilter] = useState("all");
+  const [actionFilter, setActionFilter] = useState("all");
+  const [perfFilter, setPerfFilter] = useState("all");
   const [search, setSearch] = useState("");
 
   // Category performance data
@@ -159,11 +257,6 @@ export function StyleAnalysis() {
               items.reduce((s, k) => s + k.buyingScore, 0) / items.length,
             )
           : 0;
-        const avgRos = items.length
-          ? Number.parseFloat(
-              (items.reduce((s, k) => s + k.ros, 0) / items.length).toFixed(1),
-            )
-          : 0;
         const rebuyPct = items.length
           ? Math.round(
               (items.filter((k) => k.classification === "Re-buy Candidate")
@@ -172,7 +265,7 @@ export function StyleAnalysis() {
                 100,
             )
           : 0;
-        return { cat, avgScore, avgRos, rebuyPct, count: items.length };
+        return { cat, avgScore, rebuyPct, count: items.length };
       })
       .sort((a, b) => b.avgScore - a.avgScore);
   }, [filteredKPIs]);
@@ -187,119 +280,38 @@ export function StyleAnalysis() {
     }));
   }, [filteredKPIs]);
 
-  // Table data with derived columns
+  // Enriched rows for the table
   const displayed = useMemo(() => {
-    return [...filteredKPIs]
-      .filter((k) => classFilter === "all" || k.classification === classFilter)
+    return filteredKPIs
       .filter((k) => {
-        if (decisionFilter === "all") return true;
-        return getDecision(k) === decisionFilter;
+        if (actionFilter !== "all" && getAction(k) !== actionFilter)
+          return false;
+        if (
+          perfFilter !== "all" &&
+          getPerfIndex(k, filteredKPIs).label !== perfFilter
+        )
+          return false;
+        if (search) {
+          const q = search.toLowerCase();
+          if (
+            !k.styleCode.toLowerCase().includes(q) &&
+            !k.styleName.toLowerCase().includes(q)
+          )
+            return false;
+        }
+        return true;
       })
-      .filter((k) => {
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return (
-          k.styleCode.toLowerCase().includes(q) ||
-          k.styleName.toLowerCase().includes(q)
-        );
-      })
-      .sort((a, b) => b[sortBy] - a[sortBy]);
-  }, [filteredKPIs, classFilter, decisionFilter, search, sortBy]);
+      .sort((a, b) => b.buyingScore - a.buyingScore);
+  }, [filteredKPIs, actionFilter, perfFilter, search]);
 
   return (
-    <Layout title="Style Analysis – Module 1">
-      {/* Decision Logic Box */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0 }}
-        className="mb-6"
-      >
-        <Card
-          className="border-0"
-          style={{ background: "#fef3c7", border: "1px solid #fde68a" }}
-        >
-          <CardHeader className="pb-3">
-            <CardTitle
-              className="text-sm font-semibold flex items-center gap-2"
-              style={{ color: "#92400e" }}
-            >
-              <Brain className="w-4 h-4" style={{ color: "#b45309" }} />
-              Decision Logic — How This Tool Thinks
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-6">
-              <div>
-                <p
-                  className="text-xs font-bold mb-1"
-                  style={{ color: "#78350f" }}
-                >
-                  ROS vs Zone Average
-                </p>
-                <p
-                  className="text-xs leading-relaxed"
-                  style={{ color: "#92400e" }}
-                >
-                  If a style's Rate of Sale exceeds its zone average, it scores
-                  higher for rebuy. A higher-than-average ROS signals strong
-                  customer demand relative to its peer group.
-                </p>
-              </div>
-              <div>
-                <p
-                  className="text-xs font-bold mb-1"
-                  style={{ color: "#78350f" }}
-                >
-                  Stock Cover Weeks
-                </p>
-                <p
-                  className="text-xs leading-relaxed"
-                  style={{ color: "#92400e" }}
-                >
-                  <span className="font-semibold">Cover &gt;12 wks</span> = High
-                  Risk (markdown candidate).
-                  <br />
-                  <span className="font-semibold">6–12 wks</span> = Medium —
-                  monitor closely.
-                  <br />
-                  <span className="font-semibold">&lt;6 wks</span> = Safe —
-                  replenishment recommended.
-                </p>
-              </div>
-              <div>
-                <p
-                  className="text-xs font-bold mb-1"
-                  style={{ color: "#78350f" }}
-                >
-                  Final Decision Logic
-                </p>
-                <p
-                  className="text-xs leading-relaxed"
-                  style={{ color: "#92400e" }}
-                >
-                  <span className="font-semibold">Score ≥70</span> → Aggressive
-                  Rebuy
-                  <br />
-                  <span className="font-semibold">Score 40–69</span> → Moderate
-                  Rebuy
-                  <br />
-                  <span className="font-semibold">Score &lt;40</span> → Exit —
-                  discontinue this style
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
+    <Layout title="Style Analysis – Decision Intelligence">
       {/* Charts Row */}
       <div className="grid grid-cols-2 gap-5 mb-6">
-        {/* Category Performance */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
+          transition={{ delay: 0 }}
         >
           <Card className="shadow-card border-0 h-full">
             <CardHeader className="pb-2">
@@ -307,7 +319,7 @@ export function StyleAnalysis() {
                 className="text-sm font-semibold"
                 style={{ color: "#0f172a" }}
               >
-                Avg Buying Score by Category
+                Performance by Category
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -389,7 +401,6 @@ export function StyleAnalysis() {
           </Card>
         </motion.div>
 
-        {/* Score Distribution */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -435,47 +446,25 @@ export function StyleAnalysis() {
                     {scoreDistribution.map((d) => (
                       <Cell
                         key={d.label}
-                        fill={
-                          d.label === "81–100"
-                            ? "#16a34a"
-                            : d.label === "61–80"
-                              ? "#84cc16"
-                              : d.label === "41–60"
-                                ? "#d97706"
-                                : d.label === "21–40"
-                                  ? "#f97316"
-                                  : "#dc2626"
-                        }
+                        fill={BUCKET_COLORS[d.label] ?? "#94a3b8"}
                       />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
               <div
-                className="mt-2 flex items-center gap-4 text-xs"
+                className="mt-2 flex items-center gap-3 flex-wrap text-xs"
                 style={{ color: "#64748b" }}
               >
-                <span className="flex items-center gap-1">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm inline-block"
-                    style={{ background: "#16a34a" }}
-                  />
-                  High (81–100)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm inline-block"
-                    style={{ background: "#d97706" }}
-                  />
-                  Mid (41–60)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm inline-block"
-                    style={{ background: "#dc2626" }}
-                  />
-                  Low (0–20)
-                </span>
+                {SCORE_BUCKETS.map((b) => (
+                  <span key={b.label} className="flex items-center gap-1">
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm inline-block"
+                      style={{ background: BUCKET_COLORS[b.label] }}
+                    />
+                    {b.label}
+                  </span>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -491,12 +480,17 @@ export function StyleAnalysis() {
         <Card className="shadow-card border-0">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <CardTitle
-                className="text-sm font-semibold"
-                style={{ color: "#0f172a" }}
-              >
-                Style-Level Performance Detail
-              </CardTitle>
+              <div>
+                <CardTitle
+                  className="text-sm font-semibold"
+                  style={{ color: "#0f172a" }}
+                >
+                  Style-Level Decision Intelligence
+                </CardTitle>
+                <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+                  {displayed.length} of {filteredKPIs.length} styles shown
+                </p>
+              </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative">
                   <Search
@@ -508,94 +502,59 @@ export function StyleAnalysis() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="pl-8 h-8 text-xs w-44"
-                    data-ocid="style.search_input"
                   />
                 </div>
-                <Select value={classFilter} onValueChange={setClassFilter}>
-                  <SelectTrigger
-                    className="w-40 h-8 text-xs"
-                    data-ocid="style.classification.select"
-                  >
-                    <SelectValue placeholder="Classification" />
+                <Select value={actionFilter} onValueChange={setActionFilter}>
+                  <SelectTrigger className="w-36 h-8 text-xs">
+                    <SelectValue placeholder="Action" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Classifications</SelectItem>
-                    <SelectItem value="Re-buy Candidate">
-                      Re-buy Candidate
-                    </SelectItem>
-                    <SelectItem value="Monitor">Monitor</SelectItem>
-                    <SelectItem value="Do Not Re-buy">Do Not Re-buy</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={decisionFilter}
-                  onValueChange={setDecisionFilter}
-                >
-                  <SelectTrigger
-                    className="w-40 h-8 text-xs"
-                    data-ocid="style.decision.select"
-                  >
-                    <SelectValue placeholder="Decision" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Decisions</SelectItem>
-                    <SelectItem value="Aggressive Rebuy">
-                      Aggressive Rebuy
-                    </SelectItem>
-                    <SelectItem value="Moderate Rebuy">
-                      Moderate Rebuy
-                    </SelectItem>
+                    <SelectItem value="all">All Actions</SelectItem>
+                    <SelectItem value="Rebuy">Rebuy</SelectItem>
+                    <SelectItem value="Hold">Hold</SelectItem>
                     <SelectItem value="Exit">Exit</SelectItem>
+                    <SelectItem value="Markdown">Markdown</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select
-                  value={sortBy}
-                  onValueChange={(v) => setSortBy(v as typeof sortBy)}
-                >
-                  <SelectTrigger
-                    className="w-36 h-8 text-xs"
-                    data-ocid="style.sort.select"
-                  >
-                    <SelectValue placeholder="Sort by" />
+                <Select value={perfFilter} onValueChange={setPerfFilter}>
+                  <SelectTrigger className="w-40 h-8 text-xs">
+                    <SelectValue placeholder="Performance" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="buyingScore">Buying Score</SelectItem>
-                    <SelectItem value="ros">ROS</SelectItem>
-                    <SelectItem value="grossMarginPct">Gross Margin</SelectItem>
+                    <SelectItem value="all">All Performers</SelectItem>
+                    <SelectItem value="High Performer">
+                      High Performer
+                    </SelectItem>
+                    <SelectItem value="Stable">Stable</SelectItem>
+                    <SelectItem value="Low Performer">Low Performer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
-              {displayed.length} of {filteredKPIs.length} styles shown
-            </p>
           </CardHeader>
           <CardContent className="p-0">
             {displayed.length === 0 ? (
               <div
                 className="py-12 text-center text-sm"
                 style={{ color: "#94a3b8" }}
-                data-ocid="style.empty_state"
               >
                 No styles match the current filters.
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <Table data-ocid="style.table">
+                <Table>
                   <TableHeader>
                     <TableRow style={{ background: "#f8fafc" }}>
                       {[
-                        "Style Code",
-                        "Style Name",
-                        "Season",
-                        "Category",
-                        "ROS",
-                        "Inv Cover",
-                        "GM%",
-                        "Buying Score",
-                        "Classification",
-                        "Decision",
-                        "Risk",
+                        "Style",
+                        "Perf. Index",
+                        "Rebuy Trigger",
+                        "Stock Status",
+                        "Momentum",
+                        "Action",
+                        "Inv. Health",
+                        "Rebuy Qty",
+                        "Markdown",
                         "Recommendation",
                       ].map((h) => (
                         <TableHead
@@ -609,126 +568,109 @@ export function StyleAnalysis() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {displayed.map((k, idx) => (
-                      <TableRow
-                        key={k.styleCode}
-                        data-ocid={`style.item.${idx + 1}`}
-                        style={{
-                          background: idx % 2 === 1 ? "#f8fafc" : "white",
-                        }}
-                      >
-                        <TableCell
-                          className="text-xs font-mono font-medium whitespace-nowrap"
-                          style={{ color: "#b45309" }}
-                        >
-                          {k.styleCode}
-                        </TableCell>
-                        <TableCell
-                          className="text-xs font-medium whitespace-nowrap"
-                          style={{ color: "#0f172a" }}
-                        >
-                          {k.styleName}
-                        </TableCell>
-                        <TableCell
-                          className="text-xs"
-                          style={{ color: "#64748b" }}
-                        >
-                          {k.season}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
-                            style={{ background: "#fef3c7", color: "#92400e" }}
-                          >
-                            {k.category}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className="w-10 h-1.5 rounded-full"
-                              style={{ background: "#e2e8f0" }}
-                            >
-                              <div
-                                className="h-1.5 rounded-full"
-                                style={{
-                                  width: `${Math.min(100, (k.ros / 15) * 100)}%`,
-                                  background:
-                                    k.ros >= 8
-                                      ? "#16a34a"
-                                      : k.ros >= 4
-                                        ? "#d97706"
-                                        : "#dc2626",
-                                }}
-                              />
-                            </div>
-                            <span
-                              className="text-xs font-semibold"
-                              style={{ color: "#0f172a" }}
-                            >
-                              {k.ros.toFixed(1)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell
-                          className="text-xs"
+                    {displayed.map((k, idx) => {
+                      const { index: perfIdx, label: perfLabel } = getPerfIndex(
+                        k,
+                        filteredKPIs,
+                      );
+                      const trigger = getRebuytrigger(k, filteredKPIs);
+                      const stockStatus = getStockStatus(k);
+                      const momentum = getMomentum(k);
+                      const action = getAction(k);
+                      const { label: healthLabel } = getHealthScore(k);
+                      const markdownPct = getMarkdownPct(k);
+                      const rebuyQty = getRebuyQty(k);
+                      const recommendation = getSmartRecommendation(
+                        k,
+                        filteredKPIs,
+                      );
+                      return (
+                        <TableRow
+                          key={`${k.styleCode}-${k.season}-${idx}`}
                           style={{
-                            color:
-                              k.inventoryCoverWeeks <= 3
-                                ? "#dc2626"
-                                : "#64748b",
+                            background: idx % 2 === 1 ? "#f8fafc" : "white",
                           }}
                         >
-                          {k.inventoryCoverWeeks.toFixed(1)} wks
-                        </TableCell>
-                        <TableCell
-                          className="text-xs"
-                          style={{
-                            color:
-                              k.grossMarginPct >= 50 ? "#16a34a" : "#0f172a",
-                          }}
-                        >
-                          {k.grossMarginPct.toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="w-36">
-                          <div className="flex items-center gap-2">
-                            <Progress
-                              value={k.buyingScore}
-                              className="h-1.5 flex-1"
-                              style={
-                                {
-                                  "--progress-fill":
-                                    classColors[k.classification],
-                                } as React.CSSProperties
-                              }
-                            />
-                            <span
-                              className="text-xs font-bold w-6 text-right"
-                              style={{ color: classColors[k.classification] }}
+                          <TableCell className="min-w-[140px]">
+                            <p
+                              className="text-xs font-mono font-bold"
+                              style={{ color: "#b45309" }}
                             >
-                              {k.buyingScore}
+                              {k.styleCode}
+                            </p>
+                            <p
+                              className="text-xs truncate max-w-[120px]"
+                              style={{ color: "#64748b" }}
+                            >
+                              {k.styleName}
+                            </p>
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                              style={{
+                                background: "#fef3c7",
+                                color: "#92400e",
+                              }}
+                            >
+                              {k.category}
                             </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <ClassificationBadge value={k.classification} />
-                        </TableCell>
-                        <TableCell>
-                          <DecisionBadge value={getDecision(k)} />
-                        </TableCell>
-                        <TableCell>
-                          <RiskBadge value={getRisk(k)} />
-                        </TableCell>
-                        <TableCell className="min-w-[180px]">
-                          <p
-                            className="text-xs italic"
-                            style={{ color: "#94a3b8" }}
+                          </TableCell>
+                          <TableCell className="min-w-[120px]">
+                            <PerfBadge label={perfLabel} />
+                            <p
+                              className="text-xs mt-1"
+                              style={{ color: "#94a3b8" }}
+                            >
+                              Index: {perfIdx}×
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <TriggerBadge value={trigger} />
+                          </TableCell>
+                          <TableCell>
+                            <StockBadge value={stockStatus} />
+                            <p
+                              className="text-xs mt-1"
+                              style={{ color: "#94a3b8" }}
+                            >
+                              {k.inventoryCoverWeeks.toFixed(1)} wks
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <MomentumBadge value={momentum} />
+                          </TableCell>
+                          <TableCell>
+                            <ActionBadge value={action} />
+                          </TableCell>
+                          <TableCell>
+                            <HealthBadge label={healthLabel} />
+                          </TableCell>
+                          <TableCell
+                            className="text-xs font-bold"
+                            style={{
+                              color: rebuyQty > 0 ? "#15803d" : "#94a3b8",
+                            }}
                           >
-                            {getRecommendation(k)}
-                          </p>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                            {rebuyQty > 0 ? rebuyQty.toLocaleString() : "—"}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs font-semibold"
+                            style={{
+                              color: markdownPct > 0 ? "#b91c1c" : "#94a3b8",
+                            }}
+                          >
+                            {markdownPct > 0 ? `${markdownPct}%` : "—"}
+                          </TableCell>
+                          <TableCell className="min-w-[200px]">
+                            <p
+                              className="text-xs italic"
+                              style={{ color: "#64748b" }}
+                            >
+                              {recommendation}
+                            </p>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

@@ -15,9 +15,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,7 +23,6 @@ import {
 import { Layout } from "../components/Layout";
 import { useData } from "../context/DataContext";
 
-const DECISION_COLORS = ["#16a34a", "#d97706", "#dc2626"];
 const RISK_COLORS = {
   "High Risk": "#dc2626",
   Medium: "#d97706",
@@ -52,39 +48,19 @@ export function Dashboard() {
     const avgRos =
       total > 0 ? filteredKPIs.reduce((s, k) => s + k.ros, 0) / total : 0;
 
-    // Zone performance
+    // Zone performance — sorted by count
     const cats = Array.from(new Set(filteredKPIs.map((k) => k.category)));
     const zoneData = cats
       .map((cat) => {
         const items = filteredKPIs.filter((k) => k.category === cat);
-        const avgZoneRos = items.length
-          ? items.reduce((s, k) => s + k.ros, 0) / items.length
-          : 0;
         return {
           zone: cat,
-          avgRos: Number.parseFloat(avgZoneRos.toFixed(1)),
           count: items.length,
         };
       })
-      .sort((a, b) => b.avgRos - a.avgRos);
+      .sort((a, b) => b.count - a.count);
 
     const topZone = zoneData[0];
-    const topZoneAvgRos = topZone ? topZone.avgRos : 0;
-
-    // Decision split
-    const aggressiveCount = rebuyItems.filter(
-      (k) => k.buyingScore >= 70,
-    ).length;
-    const moderateCount = filteredKPIs.filter(
-      (k) =>
-        (k.classification === "Re-buy Candidate" && k.buyingScore < 70) ||
-        k.classification === "Monitor",
-    ).length;
-    const decisionData = [
-      { name: "Aggressive Rebuy", value: aggressiveCount },
-      { name: "Moderate Rebuy", value: moderateCount },
-      { name: "Exit", value: exitCount },
-    ].filter((d) => d.value > 0);
 
     // Stock risk
     const highRisk = filteredKPIs.filter(
@@ -115,6 +91,9 @@ export function Dashboard() {
     ];
 
     // Insights
+    const rebuyQualifyCount = rebuyItems.filter(
+      (k) => k.buyingScore >= 70,
+    ).length;
     const topZoneRebuyItems = topZone
       ? filteredKPIs.filter(
           (k) =>
@@ -132,20 +111,20 @@ export function Dashboard() {
               100,
           )
         : 0;
-    const aggressivePct =
-      total > 0 ? Math.round((aggressiveCount / total) * 100) : 0;
+    const rebuyQualifyPct =
+      total > 0 ? Math.round((rebuyQualifyCount / total) * 100) : 0;
 
     const insights: string[] = [];
     if (topZone) {
       insights.push(
-        `${topZone.zone} zone shows highest avg ROS (${topZoneAvgRos.toFixed(1)}), contributing to ${topZoneRebuyPct}% of rebuy recommendations.`,
+        `${topZone.zone} zone has the highest style count (${topZone.count} styles), contributing to ${topZoneRebuyPct}% of rebuy recommendations.`,
       );
     }
     insights.push(
       `${overstockedPct}% of styles have high stock cover (>10 weeks) and may require markdown intervention.`,
     );
     insights.push(
-      `${aggressivePct}% of styles qualify for aggressive rebuy based on score and velocity.`,
+      `${rebuyQualifyPct}% of styles qualify for rebuy based on score and velocity.`,
     );
 
     return {
@@ -155,9 +134,7 @@ export function Dashboard() {
       rebuyCount,
       totalRebuyQty,
       avgRos,
-      topZoneAvgRos,
       zoneData,
-      decisionData,
       riskData,
       insights,
     };
@@ -197,24 +174,17 @@ export function Dashboard() {
       sub: "Estimated units",
     },
     {
-      label: "Avg ROS vs Zone Avg",
+      label: "Avg ROS",
       value: `${metrics.avgRos.toFixed(1)}`,
       icon: BarChart2,
       color: "#0369a1",
       bg: "#e0f2fe",
-      sub: `vs ${metrics.topZoneAvgRos.toFixed(1)} top zone avg`,
+      sub: "Overall average ROS",
     },
   ];
 
   return (
     <Layout title="Dashboard Overview">
-      {/* Strategic subtitle */}
-      <p
-        className="text-sm mb-5 -mt-1"
-        style={{ color: "#94a3b8", fontStyle: "italic" }}
-      >
-        Management Overview — What should the business DO?
-      </p>
       {/* KPI Cards */}
       <div className="grid grid-cols-5 gap-4 mb-6">
         {kpiCards.map((card, i) => (
@@ -266,8 +236,8 @@ export function Dashboard() {
         ))}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-3 gap-5 mb-6">
+      {/* Charts Row — 2 columns */}
+      <div className="grid grid-cols-2 gap-5 mb-6">
         {/* Zone Performance */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -283,7 +253,7 @@ export function Dashboard() {
                 className="text-sm font-semibold"
                 style={{ color: "#0f172a" }}
               >
-                Zone Performance – Avg ROS
+                Zone Performance – Style Count
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -307,14 +277,14 @@ export function Dashboard() {
                       axisLine={false}
                     />
                     <Tooltip
-                      formatter={(val: number) => [`${val}`, "Avg ROS"]}
+                      formatter={(val: number) => [`${val}`, "Styles"]}
                       contentStyle={{
                         fontSize: 12,
                         borderRadius: 8,
                         border: "1px solid #e2e8f0",
                       }}
                     />
-                    <Bar dataKey="avgRos" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                       {metrics.zoneData.map((d, i) => (
                         <Cell
                           key={d.zone}
@@ -336,93 +306,11 @@ export function Dashboard() {
           </Card>
         </motion.div>
 
-        {/* Rebuy Decision Split */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45 }}
-        >
-          <Card
-            className="shadow-card border-0 h-full"
-            data-ocid="dashboard.decision.card"
-          >
-            <CardHeader className="pb-2">
-              <CardTitle
-                className="text-sm font-semibold"
-                style={{ color: "#0f172a" }}
-              >
-                Rebuy Decision Split
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {metrics.decisionData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie
-                      data={metrics.decisionData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={75}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {metrics.decisionData.map((entry, index) => (
-                        <Cell
-                          key={entry.name}
-                          fill={DECISION_COLORS[index % DECISION_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        fontSize: 12,
-                        borderRadius: 8,
-                        border: "1px solid #e2e8f0",
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div
-                  className="flex items-center justify-center h-48 text-sm"
-                  style={{ color: "#94a3b8" }}
-                >
-                  No data
-                </div>
-              )}
-              <div className="mt-1 space-y-1">
-                {metrics.decisionData.map((d, i) => (
-                  <div
-                    key={d.name}
-                    className="flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="w-2 h-2 rounded-full inline-block"
-                        style={{ background: DECISION_COLORS[i] }}
-                      />
-                      <span style={{ color: "#64748b" }}>{d.name}</span>
-                    </div>
-                    <span
-                      className="font-semibold"
-                      style={{ color: "#0f172a" }}
-                    >
-                      {d.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
         {/* Stock Risk Distribution */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.52 }}
+          transition={{ delay: 0.45 }}
         >
           <Card
             className="shadow-card border-0 h-full"
@@ -528,7 +416,7 @@ export function Dashboard() {
                 const actions = [
                   "→ Prioritize this zone for rebuy",
                   "→ Action required: initiate markdown review",
-                  "→ Fast-track aggressive rebuy orders",
+                  "→ Fast-track rebuy orders",
                 ];
                 return (
                   <li key={insight} className="flex items-start gap-3">

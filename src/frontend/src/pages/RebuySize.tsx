@@ -16,7 +16,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Calendar, Clock, TrendingUp, Zap } from "lucide-react";
+import {
+  Building2,
+  Calendar,
+  Clock,
+  Search,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import {
@@ -33,22 +40,31 @@ import { useData } from "../context/DataContext";
 import { getSizeAllocations } from "../data/sampleData";
 import type { SizeAllocation } from "../types";
 
-const decisionConfig = {
-  "Immediate Re-buy Required": {
-    bg: "#15803d",
-    text: "white",
-    borderColor: "#166534",
-  },
-  "Monitor Performance": {
-    bg: "#b45309",
-    text: "white",
-    borderColor: "#92400e",
-  },
-  "Do Not Re-buy": { bg: "#b91c1c", text: "white", borderColor: "#991b1b" },
+const actionDecisionConfig: Record<
+  string,
+  { bg: string; text: string; borderColor: string }
+> = {
+  "Re-buy": { bg: "#15803d", text: "white", borderColor: "#166534" },
+  Exit: { bg: "#b91c1c", text: "white", borderColor: "#991b1b" },
 };
+
+type RebuyFilter = "all" | "Re-buy" | "Exit";
+
+function getActionLabel(
+  supplyDecision: string,
+  _velocityProfile: string,
+): RebuyFilter {
+  if (supplyDecision === "Immediate Re-buy Required") return "Re-buy";
+  return "Exit";
+}
 
 export function RebuySize() {
   const { data, filters } = useData();
+
+  const [rebuyFilter, setRebuyFilter] = useState<RebuyFilter>("all");
+  const [styleSearch, setStyleSearch] = useState("");
+  const [selectedKey, setSelectedKey] = useState("");
+  const [totalQty, setTotalQty] = useState(500);
 
   const styleOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -60,14 +76,31 @@ export function RebuySize() {
         seen.add(key);
         return true;
       })
-      .map((k) => ({
-        value: `${k.styleCode}||${k.season}`,
-        label: `${k.styleName} (${k.season})`,
-      }));
-  }, [data.kpis, filters.season]);
-
-  const [selectedKey, setSelectedKey] = useState("");
-  const [totalQty, setTotalQty] = useState(500);
+      .map((k) => {
+        const supply = data.supplyChain.find(
+          (s) => s.styleCode === k.styleCode && s.season === k.season,
+        );
+        const action: RebuyFilter = supply
+          ? getActionLabel(supply.decision, supply.velocityProfile)
+          : "Exit";
+        return {
+          value: `${k.styleCode}||${k.season}`,
+          label: `${k.styleName} (${k.season})`,
+          styleCode: k.styleCode,
+          action,
+        };
+      })
+      .filter((opt) => rebuyFilter === "all" || opt.action === rebuyFilter)
+      .filter((opt) => {
+        if (!styleSearch.trim()) return true;
+        const digits = styleSearch.trim().replace(/\D/g, "");
+        if (!digits)
+          return opt.styleCode
+            .toLowerCase()
+            .includes(styleSearch.trim().toLowerCase());
+        return opt.styleCode.endsWith(digits);
+      });
+  }, [data.kpis, data.supplyChain, filters.season, rebuyFilter, styleSearch]);
 
   const [styleCode, season] = selectedKey.split("||");
 
@@ -75,12 +108,14 @@ export function RebuySize() {
     (s) => s.styleCode === styleCode && s.season === season,
   );
 
-  // Use actual size data from uploaded file if available, else fall back to sample templates
+  const actionLabel: string = supplyData
+    ? getActionLabel(supplyData.decision, supplyData.velocityProfile)
+    : "Exit";
+
   const sizeAllocs: SizeAllocation[] = useMemo(() => {
     if (!styleCode) return [];
     const fromFile = data.sizeData?.[styleCode];
     if (fromFile && fromFile.length > 0) {
-      // Scale to user-specified totalQty
       return fromFile.map((s) => ({
         ...s,
         suggestedRebuyQty: Math.round((s.sizeContributionPct / 100) * totalQty),
@@ -90,57 +125,128 @@ export function RebuySize() {
   }, [styleCode, totalQty, data.sizeData]);
 
   const hasRealSizeData = styleCode && !!data.sizeData?.[styleCode]?.length;
-  const decisionStyle = supplyData ? decisionConfig[supplyData.decision] : null;
+  const decisionStyle = actionDecisionConfig[actionLabel] ?? null;
+
+  const sizeRatioStr =
+    sizeAllocs.length > 0
+      ? sizeAllocs.map((s) => s.ratioPart).join(" : ")
+      : "—";
+  const finalDecisionOutput = `${actionLabel} | ${totalQty.toLocaleString()} units | ${sizeRatioStr}`;
+
+  const vendorName = supplyData?.vendor || "—";
 
   return (
     <Layout title="Re-buy & Size Planning – Modules 2 & 3">
-      {/* Style Selector */}
+      {/* Filters & Style Selector */}
       <Card className="shadow-card border-0 mb-6">
         <CardContent className="pt-4 pb-4">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4 md:gap-4">
+            <div>
+              <Label
+                className="text-xs mb-1.5 block"
+                style={{ color: "#64748b" }}
+              >
+                Filter by Re-buy Option
+              </Label>
+              <Select
+                value={rebuyFilter}
+                onValueChange={(v) => {
+                  setRebuyFilter(v as RebuyFilter);
+                  setSelectedKey("");
+                }}
+              >
+                <SelectTrigger
+                  className="h-9 text-xs"
+                  data-ocid="rebuy.filter.select"
+                >
+                  <SelectValue placeholder="All Re-buy Options" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Re-buy Options</SelectItem>
+                  <SelectItem value="Re-buy">Re-buy</SelectItem>
+                  <SelectItem value="Exit">Exit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label
+                className="text-xs mb-1.5 block"
+                style={{ color: "#64748b" }}
+              >
+                Search by Last Style Digits
+              </Label>
+              <div className="relative">
+                <Search
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+                  style={{ color: "#94a3b8" }}
+                />
+                <Input
+                  placeholder="e.g. 4521"
+                  value={styleSearch}
+                  onChange={(e) => {
+                    setStyleSearch(e.target.value);
+                    setSelectedKey("");
+                  }}
+                  className="pl-8 h-9 text-xs"
+                  data-ocid="rebuy.style.search"
+                />
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
               <Label
                 className="text-xs mb-1.5 block"
                 style={{ color: "#64748b" }}
               >
                 Select Style & Season
+                {styleOptions.length > 0 && (
+                  <span className="ml-1" style={{ color: "#b45309" }}>
+                    ({styleOptions.length} styles)
+                  </span>
+                )}
               </Label>
               <Select value={selectedKey} onValueChange={setSelectedKey}>
                 <SelectTrigger className="h-9" data-ocid="rebuy.style.select">
                   <SelectValue placeholder="Choose a style to analyze..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {styleOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
+                  {styleOptions.length === 0 ? (
+                    <SelectItem value="__none" disabled>
+                      No styles match filters
                     </SelectItem>
-                  ))}
+                  ) : (
+                    styleOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
-            {selectedKey && (
-              <div>
-                <Label
-                  className="text-xs mb-1.5 block"
-                  style={{ color: "#64748b" }}
-                >
-                  Total Re-buy Quantity
-                </Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={totalQty}
-                  onChange={(e) =>
-                    setTotalQty(
-                      Math.max(1, Number.parseInt(e.target.value) || 0),
-                    )
-                  }
-                  className="h-9 w-36 text-sm"
-                  data-ocid="rebuy.qty.input"
-                />
-              </div>
-            )}
           </div>
+
+          {selectedKey && (
+            <div className="mt-3">
+              <Label
+                className="text-xs mb-1.5 block"
+                style={{ color: "#64748b" }}
+              >
+                Total Re-buy Quantity
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={totalQty}
+                onChange={(e) =>
+                  setTotalQty(Math.max(1, Number.parseInt(e.target.value) || 0))
+                }
+                className="h-9 w-36 text-sm"
+                data-ocid="rebuy.qty.input"
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -159,7 +265,8 @@ export function RebuySize() {
             Select a Style to Begin Analysis
           </p>
           <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>
-            Choose a style and season from the dropdown above
+            Use the filters above to narrow down styles, then choose one to
+            analyse
           </p>
         </div>
       )}
@@ -170,6 +277,26 @@ export function RebuySize() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
+          {/* Final Decision Output — top highlight */}
+          <div
+            className="rounded-xl px-6 py-4 flex flex-col items-center justify-center gap-1"
+            style={{ background: "#0f172a", border: "2px solid #fbbf24" }}
+            data-ocid="rebuy.final_decision_output"
+          >
+            <p
+              className="text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "#fbbf24" }}
+            >
+              🎯 Final Decision Output
+            </p>
+            <p
+              className="text-xl font-bold tracking-wide text-center"
+              style={{ color: "white" }}
+            >
+              {finalDecisionOutput}
+            </p>
+          </div>
+
           {/* Module 2: Supply Chain */}
           <Card className="shadow-card border-0">
             <CardHeader className="pb-3">
@@ -184,6 +311,13 @@ export function RebuySize() {
               <div className="grid grid-cols-4 gap-4 mb-5">
                 {[
                   {
+                    label: "Vendor Name",
+                    value: vendorName,
+                    icon: Building2,
+                    color: "#7c3aed",
+                    bg: "#ede9fe",
+                  },
+                  {
                     label: "Vendor Lead Time",
                     value: `${supplyData.vendorLeadTimeDays} days`,
                     icon: Clock,
@@ -196,23 +330,6 @@ export function RebuySize() {
                     icon: Calendar,
                     color: "#0891b2",
                     bg: "#e0f2fe",
-                  },
-                  {
-                    label: "Sales Stability",
-                    value: `${supplyData.salesStabilityScore}/100`,
-                    icon: TrendingUp,
-                    color:
-                      supplyData.salesStabilityScore >= 70
-                        ? "#16a34a"
-                        : supplyData.salesStabilityScore >= 50
-                          ? "#d97706"
-                          : "#dc2626",
-                    bg:
-                      supplyData.salesStabilityScore >= 70
-                        ? "#dcfce7"
-                        : supplyData.salesStabilityScore >= 50
-                          ? "#fef3c7"
-                          : "#fee2e2",
                   },
                   {
                     label: "Velocity Profile",
@@ -252,7 +369,7 @@ export function RebuySize() {
                       </p>
                     </div>
                     <p
-                      className="text-xl font-bold"
+                      className="text-xl font-bold truncate"
                       style={{ color: tile.color }}
                     >
                       {tile.value}
@@ -261,7 +378,6 @@ export function RebuySize() {
                 ))}
               </div>
 
-              {/* Decision Banner */}
               {decisionStyle && (
                 <div
                   className="w-full rounded-lg px-6 py-4 flex items-center justify-center"
@@ -275,7 +391,7 @@ export function RebuySize() {
                     className="text-xl font-bold tracking-wide"
                     style={{ color: decisionStyle.text }}
                   >
-                    🎯 {supplyData.decision}
+                    🎯 {actionLabel}
                   </p>
                 </div>
               )}
@@ -304,35 +420,24 @@ export function RebuySize() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-6">
-                {/* Table */}
                 <div>
                   <Table data-ocid="rebuy.size.table">
                     <TableHeader>
                       <TableRow style={{ background: "#f8fafc" }}>
-                        <TableHead
-                          className="text-xs font-semibold"
-                          style={{ color: "#64748b" }}
-                        >
-                          Size
-                        </TableHead>
-                        <TableHead
-                          className="text-xs font-semibold"
-                          style={{ color: "#64748b" }}
-                        >
-                          Ratio
-                        </TableHead>
-                        <TableHead
-                          className="text-xs font-semibold"
-                          style={{ color: "#64748b" }}
-                        >
-                          Contribution %
-                        </TableHead>
-                        <TableHead
-                          className="text-xs font-semibold"
-                          style={{ color: "#64748b" }}
-                        >
-                          Suggested Qty
-                        </TableHead>
+                        {[
+                          "Size",
+                          "Ratio",
+                          "Contribution %",
+                          "Suggested Qty",
+                        ].map((h) => (
+                          <TableHead
+                            key={h}
+                            className="text-xs font-semibold"
+                            style={{ color: "#64748b" }}
+                          >
+                            {h}
+                          </TableHead>
+                        ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -377,7 +482,6 @@ export function RebuySize() {
                   </p>
                 </div>
 
-                {/* Bar chart */}
                 <div>
                   <p
                     className="text-xs font-medium mb-3"
@@ -438,6 +542,25 @@ export function RebuySize() {
               />
             </CardHeader>
             <CardContent>
+              {/* Compact Final Decision Output line */}
+              <div
+                className="rounded-lg px-4 py-3 mb-5 text-center"
+                style={{
+                  background: "rgba(251,191,36,0.12)",
+                  border: "1px solid rgba(251,191,36,0.4)",
+                }}
+              >
+                <p
+                  className="text-xs uppercase tracking-widest mb-1"
+                  style={{ color: "#94a3b8" }}
+                >
+                  Final Decision Output
+                </p>
+                <p className="text-base font-bold" style={{ color: "#fbbf24" }}>
+                  {finalDecisionOutput}
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <p
@@ -449,15 +572,24 @@ export function RebuySize() {
                   <p
                     className="text-3xl font-bold mt-1"
                     style={{
-                      color:
-                        supplyData.decision === "Immediate Re-buy Required"
-                          ? "#4ade80"
-                          : "#f87171",
+                      color: actionLabel !== "Exit" ? "#4ade80" : "#f87171",
                     }}
                   >
-                    {supplyData.decision === "Immediate Re-buy Required"
-                      ? "YES"
-                      : "NO"}
+                    {actionLabel !== "Exit" ? "YES" : "NO"}
+                  </p>
+                </div>
+                <div>
+                  <p
+                    className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "#94a3b8" }}
+                  >
+                    Vendor
+                  </p>
+                  <p
+                    className="text-xl font-bold mt-1 truncate"
+                    style={{ color: "#fbbf24" }}
+                  >
+                    {vendorName}
                   </p>
                 </div>
                 <div>
@@ -491,9 +623,7 @@ export function RebuySize() {
                     className="text-2xl font-bold mt-1"
                     style={{ color: "#fbbf24" }}
                   >
-                    {sizeAllocs.length > 0
-                      ? sizeAllocs.map((s) => s.ratioPart).join(" : ")
-                      : "—"}
+                    {sizeRatioStr}
                   </p>
                 </div>
                 <div>
@@ -507,12 +637,7 @@ export function RebuySize() {
                     className="text-xl font-bold mt-1"
                     style={{ color: "white" }}
                   >
-                    {supplyData.decision === "Immediate Re-buy Required" &&
-                    supplyData.salesStabilityScore >= 70
-                      ? "Aggressive Rebuy"
-                      : supplyData.decision === "Immediate Re-buy Required"
-                        ? "Moderate Rebuy"
-                        : "Exit"}
+                    {actionLabel}
                   </p>
                 </div>
               </div>

@@ -6,11 +6,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle, Loader2, Upload } from "lucide-react";
+import { CheckCircle, Loader2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useData } from "../context/DataContext";
 import { parseExcelFile } from "../utils/excelParser";
+
+const UPLOAD_TOAST_ID = "upload-summary";
 
 interface TopBarProps {
   title: string;
@@ -31,14 +33,25 @@ export function TopBar({ title }: TopBarProps) {
 
       const s = parsed.analysisSummary;
       if (s) {
-        // Show a detailed analysis toast
         toast.custom(
           () => (
             <div
-              className="rounded-xl shadow-lg border p-4 max-w-sm w-full"
+              className="rounded-xl shadow-lg border p-4 max-w-sm w-full relative"
               style={{ background: "white", borderColor: "#e2e8f0" }}
             >
-              <div className="flex items-start gap-3">
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => toast.dismiss(UPLOAD_TOAST_ID)}
+                className="absolute top-3 right-3 flex items-center justify-center rounded hover:bg-slate-100 transition-colors"
+                style={{ color: "#94a3b8", width: "20px", height: "20px" }}
+                aria-label="Dismiss"
+                data-ocid="upload_summary.close_button"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-start gap-3 pr-5">
                 <CheckCircle
                   className="w-5 h-5 mt-0.5 shrink-0"
                   style={{ color: "#16a34a" }}
@@ -91,7 +104,7 @@ export function TopBar({ title }: TopBarProps) {
               </div>
             </div>
           ),
-          { duration: 8000 },
+          { id: UPLOAD_TOAST_ID, duration: 8000 },
         );
       } else {
         toast.success("Excel file uploaded and data refreshed!");

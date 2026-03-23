@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { AlertTriangle, Scissors } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { useData } from "../context/DataContext";
 
@@ -22,21 +22,70 @@ function getMarkdown(ros: number, cover: number) {
 export function MarkdownModule() {
   const { filteredKPIs } = useData();
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterRisk, setFilterRisk] = useState("All");
+  const [sortBy, setSortBy] = useState("pct");
+
   const atRisk = useMemo(() => {
-    return filteredKPIs
+    const withMarkdown = filteredKPIs
       .map((k) => ({
         ...k,
         ...getMarkdown(k.ros, k.inventoryCoverWeeks),
       }))
       .filter((k) => k.pct > 0);
+
+    // Deduplicate by styleCode — keep the entry with the highest inventoryCoverWeeks (worst case)
+    const deduped = new Map<string, (typeof withMarkdown)[number]>();
+    for (const item of withMarkdown) {
+      const existing = deduped.get(item.styleCode);
+      if (
+        !existing ||
+        item.inventoryCoverWeeks > existing.inventoryCoverWeeks
+      ) {
+        deduped.set(item.styleCode, item);
+      }
+    }
+
+    return Array.from(deduped.values());
   }, [filteredKPIs]);
+
+  const filteredAtRisk = useMemo(() => {
+    let result = [...atRisk];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(
+        (k) =>
+          k.styleCode.toLowerCase().includes(q) ||
+          (k.styleName ?? "").toLowerCase().includes(q),
+      );
+    }
+
+    if (filterRisk !== "All") {
+      result = result.filter((k) => k.risk === filterRisk);
+    }
+
+    if (sortBy === "pct") {
+      result.sort((a, b) => b.pct - a.pct);
+    } else if (sortBy === "cover") {
+      result.sort((a, b) => b.inventoryCoverWeeks - a.inventoryCoverWeeks);
+    } else if (sortBy === "ros") {
+      result.sort((a, b) => a.ros - b.ros);
+    }
+
+    return result;
+  }, [atRisk, searchQuery, filterRisk, sortBy]);
 
   const totalAtRisk = atRisk.length;
   const avgMarkdownPct =
     totalAtRisk > 0
       ? Math.round(atRisk.reduce((s, k) => s + k.pct, 0) / totalAtRisk)
       : 0;
-  const totalCoverWeeks = atRisk.reduce((s, k) => s + k.inventoryCoverWeeks, 0);
+  // Average stock cover among at-risk styles (meaningful metric vs sum)
+  const avgCoverWeeks =
+    totalAtRisk > 0
+      ? atRisk.reduce((s, k) => s + k.inventoryCoverWeeks, 0) / totalAtRisk
+      : 0;
 
   const kpiCards = [
     {
@@ -54,13 +103,19 @@ export function MarkdownModule() {
       bg: "#fef3c7",
     },
     {
-      label: "Total Cover Weeks at Risk",
-      value: totalCoverWeeks.toFixed(0),
-      sub: "Weeks of excess inventory",
+      label: "Avg Stock Cover (At-Risk)",
+      value: `${avgCoverWeeks.toFixed(1)} wks`,
+      sub: "Average weeks of excess inventory",
       color: "#7c3aed",
       bg: "#ede9fe",
     },
   ];
+
+  const controlInputStyle = {
+    border: "1.5px solid #e2e8f0",
+    color: "#0f172a",
+    background: "#f8fafc",
+  };
 
   return (
     <Layout title="Markdown Risk Module">
@@ -96,21 +151,113 @@ export function MarkdownModule() {
         ))}
       </div>
 
+      {/* Search & Filter Controls */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.22 }}
+      >
+        <Card className="shadow-card border-0 mb-5">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="flex flex-col gap-1">
+                  <span
+                    className="text-xs font-semibold"
+                    style={{ color: "#64748b" }}
+                  >
+                    Search Style
+                  </span>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search style code or name..."
+                    data-ocid="markdown.search_input"
+                    className="w-full text-sm rounded-lg px-3 py-2 outline-none"
+                    style={controlInputStyle}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "#f59e0b";
+                      e.currentTarget.style.boxShadow = "0 0 0 2px #fde68a";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "#e2e8f0";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="min-w-[160px]">
+                <label className="flex flex-col gap-1">
+                  <span
+                    className="text-xs font-semibold"
+                    style={{ color: "#64748b" }}
+                  >
+                    Filter by Risk
+                  </span>
+                  <select
+                    value={filterRisk}
+                    onChange={(e) => setFilterRisk(e.target.value)}
+                    data-ocid="markdown.select"
+                    className="w-full text-sm rounded-lg px-3 py-2 outline-none cursor-pointer"
+                    style={controlInputStyle}
+                  >
+                    <option value="All">All Risks</option>
+                    <option value="High">High Risk</option>
+                    <option value="Medium">Medium Risk</option>
+                  </select>
+                </label>
+              </div>
+              <div className="min-w-[220px]">
+                <label className="flex flex-col gap-1">
+                  <span
+                    className="text-xs font-semibold"
+                    style={{ color: "#64748b" }}
+                  >
+                    Sort by Priority
+                  </span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    data-ocid="markdown.select"
+                    className="w-full text-sm rounded-lg px-3 py-2 outline-none cursor-pointer"
+                    style={controlInputStyle}
+                  >
+                    <option value="pct">Markdown % (High → Low)</option>
+                    <option value="cover">Stock Cover (High → Low)</option>
+                    <option value="ros">ROS (Low → High — worst first)</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* Table */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.28 }}
+        transition={{ delay: 0.32 }}
       >
         <Card className="shadow-card border-0 mb-6">
           <CardHeader className="pb-3">
-            <CardTitle
-              className="text-sm font-semibold flex items-center gap-2"
-              style={{ color: "#0f172a" }}
-            >
-              <Scissors className="w-4 h-4" style={{ color: "#b45309" }} />
-              Styles Requiring Markdown Action
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle
+                className="text-sm font-semibold flex items-center gap-2"
+                style={{ color: "#0f172a" }}
+              >
+                <Scissors className="w-4 h-4" style={{ color: "#b45309" }} />
+                Styles Requiring Markdown Action
+              </CardTitle>
+              <span
+                className="text-xs font-medium px-2.5 py-1 rounded-full"
+                style={{ background: "#fef3c7", color: "#92400e" }}
+              >
+                Showing {filteredAtRisk.length} of {totalAtRisk} styles at
+                markdown risk
+              </span>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {atRisk.length === 0 ? (
@@ -129,95 +276,130 @@ export function MarkdownModule() {
                   All styles have acceptable ROS and stock levels.
                 </p>
               </div>
+            ) : filteredAtRisk.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center py-12 text-center"
+                data-ocid="markdown.empty_state"
+              >
+                <AlertTriangle
+                  className="w-8 h-8 mb-2"
+                  style={{ color: "#94a3b8" }}
+                />
+                <p className="text-sm font-medium" style={{ color: "#0f172a" }}>
+                  No results match your search/filter
+                </p>
+                <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
+                  Try adjusting your search or filter.
+                </p>
+              </div>
             ) : (
-              <Table data-ocid="markdown.table">
-                <TableHeader>
-                  <TableRow style={{ background: "#f8fafc" }}>
-                    {[
-                      "Style Code",
-                      "Style Name",
-                      "Category",
-                      "ROS",
-                      "Stock Cover (wks)",
-                      "Risk",
-                      "Markdown %",
-                    ].map((h) => (
-                      <TableHead
-                        key={h}
-                        className="text-xs font-semibold"
-                        style={{ color: "#64748b" }}
-                      >
-                        {h}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {atRisk.map((k, idx) => (
-                    <TableRow
-                      key={`${k.styleCode}-${k.season}`}
-                      data-ocid={`markdown.item.${idx + 1}`}
-                      style={{
-                        background: idx % 2 === 1 ? "#f8fafc" : "white",
-                      }}
-                    >
-                      <TableCell
-                        className="text-xs font-bold"
-                        style={{ color: "#0f172a" }}
-                      >
-                        {k.styleCode}
-                      </TableCell>
-                      <TableCell
-                        className="text-xs"
-                        style={{ color: "#334155" }}
-                      >
-                        {k.styleName}
-                      </TableCell>
-                      <TableCell
-                        className="text-xs"
-                        style={{ color: "#64748b" }}
-                      >
-                        {k.category}
-                      </TableCell>
-                      <TableCell
-                        className="text-xs font-semibold"
-                        style={{ color: "#0f172a" }}
-                      >
-                        {k.ros.toFixed(1)}
-                      </TableCell>
-                      <TableCell
-                        className="text-xs"
-                        style={{ color: "#64748b" }}
-                      >
-                        {k.inventoryCoverWeeks.toFixed(1)}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                          style={{
-                            background:
-                              k.risk === "High" ? "#fee2e2" : "#fef3c7",
-                            color: k.risk === "High" ? "#b91c1c" : "#b45309",
-                          }}
+              <div className="overflow-auto">
+                <Table data-ocid="markdown.table">
+                  <TableHeader>
+                    <TableRow style={{ background: "#f8fafc" }}>
+                      {[
+                        "Priority",
+                        "Style Code",
+                        "Style Name",
+                        "Category",
+                        "ROS",
+                        "Stock Cover (wks)",
+                        "Risk",
+                        "Markdown %",
+                      ].map((h) => (
+                        <TableHead
+                          key={h}
+                          className="text-xs font-semibold"
+                          style={{ color: "#64748b" }}
                         >
-                          {k.risk}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className="text-xs font-bold px-2.5 py-1 rounded-full"
-                          style={{
-                            background: k.pct === 30 ? "#b91c1c" : "#d97706",
-                            color: "white",
-                          }}
-                        >
-                          {k.pct}%
-                        </span>
-                      </TableCell>
+                          {h}
+                        </TableHead>
+                      ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAtRisk.map((k, idx) => {
+                      const isUrgent = k.risk === "High" && k.pct === 30;
+                      return (
+                        <TableRow
+                          key={k.styleCode}
+                          data-ocid={`markdown.item.${idx + 1}`}
+                          style={{
+                            background: idx % 2 === 1 ? "#f8fafc" : "white",
+                          }}
+                        >
+                          <TableCell>
+                            <span
+                              className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                              style={{
+                                background: isUrgent ? "#fee2e2" : "#fef3c7",
+                                color: isUrgent ? "#b91c1c" : "#b45309",
+                              }}
+                            >
+                              {isUrgent ? "🔴 Urgent" : "🟡 Monitor"}
+                            </span>
+                          </TableCell>
+                          <TableCell
+                            className="text-xs font-bold"
+                            style={{ color: "#0f172a" }}
+                          >
+                            {k.styleCode}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs"
+                            style={{ color: "#334155" }}
+                          >
+                            {k.styleName}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs"
+                            style={{ color: "#64748b" }}
+                          >
+                            {k.category}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs font-semibold"
+                            style={{ color: "#0f172a" }}
+                          >
+                            {k.ros.toFixed(1)}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs"
+                            style={{ color: "#64748b" }}
+                          >
+                            {k.inventoryCoverWeeks.toFixed(1)}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                              style={{
+                                background:
+                                  k.risk === "High" ? "#fee2e2" : "#fef3c7",
+                                color:
+                                  k.risk === "High" ? "#b91c1c" : "#b45309",
+                              }}
+                            >
+                              {k.risk}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className="text-xs font-bold px-2.5 py-1 rounded-full"
+                              style={{
+                                background:
+                                  k.pct === 30 ? "#b91c1c" : "#d97706",
+                                color: "white",
+                              }}
+                            >
+                              {k.pct}%
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
