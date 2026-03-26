@@ -101,11 +101,6 @@ function getMarkdownPct(k: KPIResult): number {
   return 0;
 }
 
-function getRebuyQty(k: KPIResult): number {
-  if (k.classification !== "Re-buy Candidate") return 0;
-  return Math.round(k.ros * 4 * (k.buyingScore / 100) * 10) * 10;
-}
-
 function getSmartRecommendation(k: KPIResult, allKPIs: KPIResult[]): string {
   const { label: perfLabel } = getPerfIndex(k, allKPIs);
   const stock = getStockStatus(k);
@@ -553,7 +548,6 @@ export function StyleAnalysis() {
                         "Momentum",
                         "Action",
                         "Inv. Health",
-                        "Rebuy Qty",
                         "Markdown",
                         "Recommendation",
                       ].map((h) => (
@@ -579,7 +573,6 @@ export function StyleAnalysis() {
                       const action = getAction(k);
                       const { label: healthLabel } = getHealthScore(k);
                       const markdownPct = getMarkdownPct(k);
-                      const rebuyQty = getRebuyQty(k);
                       const recommendation = getSmartRecommendation(
                         k,
                         filteredKPIs,
@@ -643,14 +636,6 @@ export function StyleAnalysis() {
                           </TableCell>
                           <TableCell>
                             <HealthBadge label={healthLabel} />
-                          </TableCell>
-                          <TableCell
-                            className="text-xs font-bold"
-                            style={{
-                              color: rebuyQty > 0 ? "#15803d" : "#94a3b8",
-                            }}
-                          >
-                            {rebuyQty > 0 ? rebuyQty.toLocaleString() : "—"}
                           </TableCell>
                           <TableCell
                             className="text-xs font-semibold"

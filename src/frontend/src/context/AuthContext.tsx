@@ -9,14 +9,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(
-    () => localStorage.getItem("intune_auth") === "true",
-  );
+  // Always start as logged-out so login page is shown on every fresh visit
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
 
   function login(username: string, password: string): boolean {
     if (username === "admin" && password === "intune123") {
       setIsLoggedIn(true);
-      localStorage.setItem("intune_auth", "true");
       return true;
     }
     return false;
@@ -24,7 +22,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     setIsLoggedIn(false);
-    localStorage.removeItem("intune_auth");
     window.location.href = "/login";
   }
 

@@ -180,6 +180,9 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     "Cover Weeks",
     "Stock Cover",
     "Wks Cover",
+    "Cover Days",
+    "Days Cover",
+    "Stock Cover Days",
   );
   const colGM = findCol(
     headers1,
@@ -365,10 +368,13 @@ export async function parseExcelFile(file: File): Promise<AppData> {
 
   // ---- Build KPI records from Sheet 1 ----
   const allRosVals: number[] = [];
-  const allInvVals: number[] = [];
+  const allInvWeeks: number[] = []; // always in weeks after conversion
   const allGmVals: number[] = [];
 
-  // First pass: collect raw values
+  // First pass: collect values and compute invCoverWeeks
+  // Excel inv cover column is ALWAYS in days → divide by 7 to get weeks.
+  // Exception: when invFromSheet === 0 and we compute from inventory/ROS,
+  // that result is already in weeks (stockQty / weeklyROS).
   const rawKpis = stylesRows.map((r) => {
     const code = toStr(getVal(r, colStyleCode));
     const rosFromSheet = colROS ? toNum(getVal(r, colROS)) : 0;
@@ -377,18 +383,25 @@ export async function parseExcelFile(file: File): Promise<AppData> {
 
     const invFromSheet = colInvCover ? toNum(getVal(r, colInvCover)) : 0;
     const invFromInventory = inventoryMap[code] ?? 0;
-    let invCover = invFromSheet;
-    if (invCover === 0 && invFromInventory > 0 && ros > 0) {
-      invCover = invFromInventory / ros;
+
+    let invCoverWeeks: number;
+    if (invFromSheet > 0) {
+      // Excel value is in days — always convert to weeks
+      invCoverWeeks = invFromSheet / 7;
+    } else if (invFromInventory > 0 && ros > 0) {
+      // Computed as stock qty / weekly ROS — already in weeks
+      invCoverWeeks = invFromInventory / ros;
+    } else {
+      invCoverWeeks = 0;
     }
 
     const gm = colGM ? toNum(getVal(r, colGM)) : 0;
 
     allRosVals.push(ros);
-    allInvVals.push(invCover);
+    allInvWeeks.push(invCoverWeeks);
     allGmVals.push(gm);
 
-    return { r, code, ros, invCover, gm };
+    return { r, code, ros, invCoverWeeks, gm };
   });
 
   // Detect if buying score is available in the file
@@ -400,7 +413,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
 
   // Second pass: build final KPI objects
   const kpis: KPIResult[] = rawKpis
-    .map(({ r, code, ros, invCover, gm }) => {
+    .map(({ r, code, ros, invCoverWeeks, gm }) => {
       let buyingScore: number;
       let classification: KPIResult["classification"];
 
@@ -410,10 +423,10 @@ export async function parseExcelFile(file: File): Promise<AppData> {
       } else {
         buyingScore = computeScore(
           ros,
-          invCover,
+          invCoverWeeks,
           gm,
           allRosVals,
-          allInvVals,
+          allInvWeeks,
           allGmVals,
         );
       }
@@ -460,7 +473,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
         category: (toStr(getVal(r, colCategory)) || "Uncategorised") as string,
         vendor,
         ros,
-        inventoryCoverWeeks: invCover,
+        inventoryCoverWeeks: invCoverWeeks,
         grossMarginPct: gm,
         buyingScore: Math.min(100, Math.max(0, buyingScore)),
         classification,
@@ -524,7 +537,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     colBuyingScore && "Buying Score",
     colRebuyDecision && "Re-buy Decision",
     colROS && "ROS",
-    colInvCover && "Inv Cover",
+    colInvCover && "Inv Cover (days→wks)",
     colGM && "GM%",
     salesRows.length > 0 && "Sales (Sheet 2)",
     inventoryRows.length > 0 && "Inventory (Sheet 3)",

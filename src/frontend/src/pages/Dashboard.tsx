@@ -24,9 +24,9 @@ import { Layout } from "../components/Layout";
 import { useData } from "../context/DataContext";
 
 const RISK_COLORS = {
-  "High Risk": "#dc2626",
+  "Overstock Risk": "#dc2626",
   Medium: "#d97706",
-  Safe: "#16a34a",
+  "Stockout Risk": "#f97316",
 };
 
 export function Dashboard() {
@@ -74,7 +74,7 @@ export function Dashboard() {
     ).length;
     const riskData = [
       {
-        name: "High Risk",
+        name: "Overstock Risk",
         value: highRisk,
         pct: total > 0 ? Math.round((highRisk / total) * 100) : 0,
       },
@@ -84,7 +84,7 @@ export function Dashboard() {
         pct: total > 0 ? Math.round((mediumRisk / total) * 100) : 0,
       },
       {
-        name: "Safe",
+        name: "Stockout Risk",
         value: safeRisk,
         pct: total > 0 ? Math.round((safeRisk / total) * 100) : 0,
       },
@@ -372,15 +372,15 @@ export function Dashboard() {
               >
                 <p className="text-xs" style={{ color: "#64748b" }}>
                   <span style={{ color: "#dc2626", fontWeight: 600 }}>
-                    High Risk
+                    Overstock Risk
                   </span>
                   : cover &gt;12 wks ·{" "}
                   <span style={{ color: "#d97706", fontWeight: 600 }}>
                     Medium
                   </span>
                   : 6–12 wks ·{" "}
-                  <span style={{ color: "#16a34a", fontWeight: 600 }}>
-                    Safe
+                  <span style={{ color: "#f97316", fontWeight: 600 }}>
+                    Stockout Risk
                   </span>
                   : &lt;6 wks
                 </p>
