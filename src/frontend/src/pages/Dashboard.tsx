@@ -45,7 +45,12 @@ export function Dashboard() {
     const rebuyPct = total > 0 ? Math.round((rebuyCount / total) * 100) : 0;
     const exitPct = total > 0 ? Math.round((exitCount / total) * 100) : 0;
     const totalRebuyQty = rebuyCount * 50;
-    const highRosCount = filteredKPIs.filter((k) => k.ros > 1).length;
+    const avgRos =
+      total > 0 ? filteredKPIs.reduce((s, k) => s + k.ros, 0) / total : 0;
+    const rosThreshold = avgRos > 0 ? avgRos : 1;
+    const highRosCount = filteredKPIs.filter(
+      (k) => k.ros > rosThreshold,
+    ).length;
     const highRosPct = total > 0 ? Math.round((highRosCount / total) * 100) : 0;
 
     // Zone performance — sorted by count
@@ -135,6 +140,7 @@ export function Dashboard() {
       totalRebuyQty,
       highRosPct,
       highRosCount,
+      rosThreshold,
       zoneData,
       riskData,
       insights,
@@ -180,7 +186,7 @@ export function Dashboard() {
       icon: BarChart2,
       color: "#0369a1",
       bg: "#e0f2fe",
-      sub: `${metrics.highRosCount} styles have ROS > 1`,
+      sub: `${metrics.highRosCount} styles above avg ROS (${metrics.rosThreshold.toFixed(1)})`,
     },
   ];
 
