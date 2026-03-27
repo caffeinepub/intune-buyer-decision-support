@@ -47,26 +47,32 @@ function getPerfIndex(
   k: KPIResult,
   allKPIs: KPIResult[],
 ): { index: number; label: PerfLabel } {
-  const zoneAvg = getZoneAvgRos(k, allKPIs);
-  const index = zoneAvg > 0 ? +(k.ros / zoneAvg).toFixed(2) : 1;
+  const categoryAvg = getZoneAvgRos(k, allKPIs);
+  const ros4w = k.ros4Week ?? k.ros;
+  const index = categoryAvg > 0 ? +(ros4w / categoryAvg).toFixed(2) : 1;
+  // >= 1.0 means equal or above category average → Stable; > 1.2 → High Performer
   const label: PerfLabel =
-    index > 1.2 ? "High Performer" : index >= 0.8 ? "Stable" : "Low Performer";
+    index > 1.2 ? "High Performer" : index >= 1.0 ? "Stable" : "Low Performer";
   return { index, label };
 }
 
-function getRebuytrigger(
-  k: KPIResult,
-  allKPIs: KPIResult[],
-): "Triggered" | "Not Triggered" {
-  const zoneAvg = getZoneAvgRos(k, allKPIs);
-  return k.ros > zoneAvg * 1.1 ? "Triggered" : "Not Triggered";
+// Re-buy Trigger: Triggered if the style passes the re-buy condition
+// (i.e. classified as Re-buy Candidate), Not Triggered otherwise.
+function getRebuytrigger(k: KPIResult): "Triggered" | "Not Triggered" {
+  return k.classification === "Re-buy Candidate"
+    ? "Triggered"
+    : "Not Triggered";
 }
 
 type StockStatus = "Overstocked" | "Balanced" | "Understocked";
+// Stock status aligned with buying decision to avoid misleading
+// "most styles understocked" when only ~22% are re-buy candidates.
 function getStockStatus(k: KPIResult): StockStatus {
-  if (k.inventoryCoverWeeks > 10) return "Overstocked";
-  if (k.inventoryCoverWeeks >= 5) return "Balanced";
-  return "Understocked";
+  // If it's a re-buy candidate, the stock is low → Understocked
+  if (k.classification === "Re-buy Candidate") return "Understocked";
+  // Genuinely heavy stock → Overstocked
+  if (k.inventoryCoverWeeks > 12) return "Overstocked";
+  return "Balanced";
 }
 
 type ActionType = "Rebuy" | "Hold" | "Exit" | "Markdown";
@@ -77,13 +83,6 @@ function getAction(k: KPIResult): ActionType {
   return "Hold";
 }
 
-type Momentum = "Increasing" | "Stable" | "Declining";
-function getMomentum(k: KPIResult): Momentum {
-  if (k.ros >= 8 && k.inventoryCoverWeeks < 5) return "Increasing";
-  if (k.ros >= 4) return "Stable";
-  return "Declining";
-}
-
 type HealthLabel = "Healthy" | "Medium" | "Poor";
 function getHealthScore(k: KPIResult): { score: number; label: HealthLabel } {
   const cover = Math.max(0.1, k.inventoryCoverWeeks);
@@ -92,13 +91,6 @@ function getHealthScore(k: KPIResult): { score: number; label: HealthLabel } {
   const label: HealthLabel =
     score >= 0.7 ? "Healthy" : score >= 0.4 ? "Medium" : "Poor";
   return { score, label };
-}
-
-function getMarkdownPct(k: KPIResult): number {
-  if (k.ros < 2 && k.inventoryCoverWeeks > 12) return 30;
-  if (k.ros < 4 && k.inventoryCoverWeeks > 8) return 15;
-  if (k.ros < 4) return 10;
-  return 0;
 }
 
 function getSmartRecommendation(k: KPIResult, allKPIs: KPIResult[]): string {
@@ -186,22 +178,6 @@ function ActionBadge({ value }: { value: ActionType }) {
   );
 }
 
-function MomentumBadge({ value }: { value: Momentum }) {
-  const cfg = {
-    Increasing: { bg: "#dcfce7", text: "#15803d", icon: "↑" },
-    Stable: { bg: "#fef3c7", text: "#b45309", icon: "→" },
-    Declining: { bg: "#fee2e2", text: "#b91c1c", icon: "↓" },
-  }[value];
-  return (
-    <Badge
-      className="text-xs font-medium whitespace-nowrap"
-      style={{ background: cfg.bg, color: cfg.text, border: "none" }}
-    >
-      {cfg.icon} {value}
-    </Badge>
-  );
-}
-
 function HealthBadge({ label }: { label: HealthLabel }) {
   const cfg = {
     Healthy: { bg: "#dcfce7", text: "#15803d" },
@@ -241,7 +217,6 @@ export function StyleAnalysis() {
   const [perfFilter, setPerfFilter] = useState("all");
   const [search, setSearch] = useState("");
 
-  // Category performance data
   const categoryData = useMemo(() => {
     const cats = Array.from(new Set(filteredKPIs.map((k) => k.category)));
     return cats
@@ -265,7 +240,6 @@ export function StyleAnalysis() {
       .sort((a, b) => b.avgScore - a.avgScore);
   }, [filteredKPIs]);
 
-  // Score distribution
   const scoreDistribution = useMemo(() => {
     return SCORE_BUCKETS.map((bucket) => ({
       label: bucket.label,
@@ -275,7 +249,6 @@ export function StyleAnalysis() {
     }));
   }, [filteredKPIs]);
 
-  // Enriched rows for the table
   const displayed = useMemo(() => {
     return filteredKPIs
       .filter((k) => {
@@ -545,10 +518,8 @@ export function StyleAnalysis() {
                         "Perf. Index",
                         "Rebuy Trigger",
                         "Stock Status",
-                        "Momentum",
                         "Action",
                         "Inv. Health",
-                        "Markdown",
                         "Recommendation",
                       ].map((h) => (
                         <TableHead
@@ -563,20 +534,20 @@ export function StyleAnalysis() {
                   </TableHeader>
                   <TableBody>
                     {displayed.map((k, idx) => {
+                      const categoryAvgRos = getZoneAvgRos(k, filteredKPIs);
                       const { index: perfIdx, label: perfLabel } = getPerfIndex(
                         k,
                         filteredKPIs,
                       );
-                      const trigger = getRebuytrigger(k, filteredKPIs);
+                      const trigger = getRebuytrigger(k);
                       const stockStatus = getStockStatus(k);
-                      const momentum = getMomentum(k);
                       const action = getAction(k);
                       const { label: healthLabel } = getHealthScore(k);
-                      const markdownPct = getMarkdownPct(k);
                       const recommendation = getSmartRecommendation(
                         k,
                         filteredKPIs,
                       );
+                      const ros4w = k.ros4Week ?? k.ros;
                       return (
                         <TableRow
                           key={`${k.styleCode}-${k.season}-${idx}`}
@@ -607,13 +578,20 @@ export function StyleAnalysis() {
                               {k.category}
                             </span>
                           </TableCell>
-                          <TableCell className="min-w-[120px]">
+                          <TableCell className="min-w-[140px]">
                             <PerfBadge label={perfLabel} />
                             <p
                               className="text-xs mt-1"
                               style={{ color: "#94a3b8" }}
                             >
                               Index: {perfIdx}×
+                            </p>
+                            <p
+                              className="text-xs mt-0.5"
+                              style={{ color: "#94a3b8" }}
+                            >
+                              4W ROS: {ros4w.toFixed(1)} | Cat Avg:{" "}
+                              {categoryAvgRos.toFixed(1)}
                             </p>
                           </TableCell>
                           <TableCell>
@@ -629,21 +607,10 @@ export function StyleAnalysis() {
                             </p>
                           </TableCell>
                           <TableCell>
-                            <MomentumBadge value={momentum} />
-                          </TableCell>
-                          <TableCell>
                             <ActionBadge value={action} />
                           </TableCell>
                           <TableCell>
                             <HealthBadge label={healthLabel} />
-                          </TableCell>
-                          <TableCell
-                            className="text-xs font-semibold"
-                            style={{
-                              color: markdownPct > 0 ? "#b91c1c" : "#94a3b8",
-                            }}
-                          >
-                            {markdownPct > 0 ? `${markdownPct}%` : "—"}
                           </TableCell>
                           <TableCell className="min-w-[200px]">
                             <p

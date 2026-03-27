@@ -30,7 +30,7 @@ export function MarkdownModule() {
     const withMarkdown = filteredKPIs
       .map((k) => ({
         ...k,
-        ...getMarkdown(k.ros, k.inventoryCoverWeeks),
+        ...getMarkdown(k.ros4Week ?? k.ros, k.inventoryCoverWeeks),
       }))
       .filter((k) => k.pct > 0);
 
@@ -70,7 +70,11 @@ export function MarkdownModule() {
     } else if (sortBy === "cover") {
       result.sort((a, b) => b.inventoryCoverWeeks - a.inventoryCoverWeeks);
     } else if (sortBy === "ros") {
-      result.sort((a, b) => a.ros - b.ros);
+      result.sort((a, b) => {
+        const aRos = a.ros4Week ?? a.ros;
+        const bRos = b.ros4Week ?? b.ros;
+        return aRos - bRos;
+      });
     }
 
     return result;
@@ -225,7 +229,9 @@ export function MarkdownModule() {
                   >
                     <option value="pct">Markdown % (High → Low)</option>
                     <option value="cover">Stock Cover (High → Low)</option>
-                    <option value="ros">ROS (Low → High — worst first)</option>
+                    <option value="ros">
+                      4W ROS (Low → High — worst first)
+                    </option>
                   </select>
                 </label>
               </div>
@@ -302,7 +308,7 @@ export function MarkdownModule() {
                         "Style Code",
                         "Style Name",
                         "Category",
-                        "ROS",
+                        "4W ROS",
                         "Stock Cover (wks)",
                         "Risk",
                         "Markdown %",
@@ -320,6 +326,7 @@ export function MarkdownModule() {
                   <TableBody>
                     {filteredAtRisk.map((k, idx) => {
                       const isUrgent = k.risk === "High" && k.pct === 30;
+                      const ros4w = k.ros4Week ?? k.ros;
                       return (
                         <TableRow
                           key={k.styleCode}
@@ -361,7 +368,7 @@ export function MarkdownModule() {
                             className="text-xs font-semibold"
                             style={{ color: "#0f172a" }}
                           >
-                            {k.ros.toFixed(1)}
+                            {ros4w.toFixed(1)}
                           </TableCell>
                           <TableCell
                             className="text-xs"

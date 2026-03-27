@@ -18,6 +18,7 @@ export interface KPIResult {
   category: Category;
   vendor: string;
   ros: number; // Rate of Sale (units/week)
+  ros4Week: number; // 4-week ROS from Excel (falls back to ros if not present)
   inventoryCoverWeeks: number;
   grossMarginPct: number;
   buyingScore: number; // 0-100

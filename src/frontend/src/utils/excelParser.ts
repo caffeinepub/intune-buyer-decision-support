@@ -172,6 +172,23 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     "Wkly Sales",
     "Sales Rate",
   );
+  // 4-week ROS column detection
+  const col4WkROS = findCol(
+    headers1,
+    "4W ROS",
+    "4 Week ROS",
+    "4Wk ROS",
+    "4WK ROS",
+    "4 Wk ROS",
+    "4W Sales Rate",
+    "4 Week Rate of Sale",
+    "ROS 4W",
+    "ROS 4 Week",
+    "Last 4W ROS",
+    "L4W ROS",
+    "4 WEEK ROS",
+    "4WKS ROS",
+  );
   const colInvCover = findCol(
     headers1,
     "Inv Cover",
@@ -210,6 +227,8 @@ export async function parseExcelFile(file: File): Promise<AppData> {
   const salesRows = sheetToRows(wb, 1);
   // Build styleCode -> total sales qty map
   const salesMap: Record<string, number> = {};
+  // Build styleCode -> 4-week sales qty map (last 4 weeks)
+  const sales4WkMap: Record<string, number> = {};
   if (salesRows.length > 0) {
     const sh2 = Object.keys(salesRows[0]);
     const sc2 = findCol(
@@ -236,20 +255,49 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     );
     const swk2 = findCol(sh2, "Week", "WEEK", "Wk", "WK", "Period");
     if (sc2 && sq2) {
+      // Determine all unique week identifiers if a week column exists
+      let allWeeks: string[] = [];
+      if (swk2) {
+        const weekSet = new Set<string>();
+        for (const r of salesRows) {
+          const wk = toStr(getVal(r, swk2));
+          if (wk) weekSet.add(wk);
+        }
+        // Sort weeks (numeric sort if possible)
+        allWeeks = [...weekSet].sort((a, b) => {
+          const na = Number(a);
+          const nb = Number(b);
+          if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+          return a.localeCompare(b);
+        });
+      }
+      // Last 4 weeks identifiers
+      const last4Weeks = new Set(
+        allWeeks.length >= 4 ? allWeeks.slice(-4) : allWeeks,
+      );
+
       for (const r of salesRows) {
         const code = toStr(getVal(r, sc2));
         if (!code) continue;
-        salesMap[code] = (salesMap[code] ?? 0) + toNum(getVal(r, sq2));
-      }
-      // Detect number of weeks in sales data for ROS computation
-      if (swk2) {
-        const uniqueWeeks = new Set(
-          salesRows.map((r) => toStr(getVal(r, swk2))),
-        ).size;
-        if (uniqueWeeks > 1) {
-          for (const code of Object.keys(salesMap)) {
-            salesMap[code] = salesMap[code] / uniqueWeeks;
+        const qty = toNum(getVal(r, sq2));
+        salesMap[code] = (salesMap[code] ?? 0) + qty;
+        // Accumulate 4-week sales
+        if (swk2) {
+          const wk = toStr(getVal(r, swk2));
+          if (last4Weeks.has(wk)) {
+            sales4WkMap[code] = (sales4WkMap[code] ?? 0) + qty;
           }
+        }
+      }
+      // Normalise total sales to a per-week ROS
+      if (swk2 && allWeeks.length > 1) {
+        for (const code of Object.keys(salesMap)) {
+          salesMap[code] = salesMap[code] / allWeeks.length;
+        }
+        // 4-week ROS = total over last 4 weeks / 4
+        const divisor = Math.min(4, allWeeks.length);
+        for (const code of Object.keys(sales4WkMap)) {
+          sales4WkMap[code] = sales4WkMap[code] / divisor;
         }
       }
     }
@@ -381,6 +429,16 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     const rosFromSales = salesMap[code] ?? 0;
     const ros = rosFromSheet > 0 ? rosFromSheet : rosFromSales;
 
+    // 4-week ROS: from dedicated column, or from last-4-weeks sales aggregation, or fall back to ros
+    const ros4WkFromSheet = col4WkROS ? toNum(getVal(r, col4WkROS)) : 0;
+    const ros4WkFromSales = sales4WkMap[code] ?? 0;
+    const ros4Week =
+      ros4WkFromSheet > 0
+        ? ros4WkFromSheet
+        : ros4WkFromSales > 0
+          ? ros4WkFromSales
+          : ros;
+
     const invFromSheet = colInvCover ? toNum(getVal(r, colInvCover)) : 0;
     const invFromInventory = inventoryMap[code] ?? 0;
 
@@ -401,7 +459,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     allInvWeeks.push(invCoverWeeks);
     allGmVals.push(gm);
 
-    return { r, code, ros, invCoverWeeks, gm };
+    return { r, code, ros, ros4Week, invCoverWeeks, gm };
   });
 
   // Detect if buying score is available in the file
@@ -413,7 +471,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
 
   // Second pass: build final KPI objects
   const kpis: KPIResult[] = rawKpis
-    .map(({ r, code, ros, invCoverWeeks, gm }) => {
+    .map(({ r, code, ros, ros4Week, invCoverWeeks, gm }) => {
       let buyingScore: number;
       let classification: KPIResult["classification"];
 
@@ -473,6 +531,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
         category: (toStr(getVal(r, colCategory)) || "Uncategorised") as string,
         vendor,
         ros,
+        ros4Week,
         inventoryCoverWeeks: invCoverWeeks,
         grossMarginPct: gm,
         buyingScore: Math.min(100, Math.max(0, buyingScore)),
@@ -537,6 +596,7 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     colBuyingScore && "Buying Score",
     colRebuyDecision && "Re-buy Decision",
     colROS && "ROS",
+    col4WkROS && "4-Week ROS",
     colInvCover && "Inv Cover (days→wks)",
     colGM && "GM%",
     salesRows.length > 0 && "Sales (Sheet 2)",
