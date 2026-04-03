@@ -232,7 +232,7 @@ function StyleCard({
               maxWidth: "260px",
               minHeight: "320px",
               background: "linear-gradient(135deg, #fefce8 0%, #fef3c7 100%)",
-              borderRight: "1px solid #e2e8f0",
+              borderRight: "0.5px solid #e8ecf1",
             }}
           >
             <img
@@ -307,7 +307,7 @@ function StyleCard({
               <ActionBadge value={action} />
             </div>
 
-            {/* 4 KPI stats */}
+            {/* 4 KPI stats — order: 4W ROS, Sell-Through, Sales, Zone */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
               {/* ROS */}
               <div className="rounded-xl p-3" style={{ background: "#f8fafc" }}>
@@ -337,28 +337,6 @@ function StyleCard({
                 </p>
               </div>
 
-              {/* Zone */}
-              <div className="rounded-xl p-3" style={{ background: "#f8fafc" }}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <BarChart2
-                    className="w-3.5 h-3.5"
-                    style={{ color: "#7c3aed" }}
-                  />
-                  <span
-                    className="text-xs font-medium"
-                    style={{ color: "#64748b" }}
-                  >
-                    Zone
-                  </span>
-                </div>
-                <p className="text-lg font-bold" style={{ color: "#0f172a" }}>
-                  {zone}
-                </p>
-                <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
-                  VM placement
-                </p>
-              </div>
-
               {/* Sell-Through */}
               <div className="rounded-xl p-3" style={{ background: "#f8fafc" }}>
                 <div className="flex items-center gap-1.5 mb-1">
@@ -374,7 +352,7 @@ function StyleCard({
                   </span>
                 </div>
                 <p className="text-2xl font-bold" style={{ color: "#0f172a" }}>
-                  {kpi.sellThroughPct}%
+                  {kpi.sellThroughPct.toFixed(2)}%
                 </p>
                 <div
                   className="w-full h-1.5 rounded-full mt-1 overflow-hidden"
@@ -416,22 +394,32 @@ function StyleCard({
                   units sold
                 </p>
               </div>
+
+              {/* Zone */}
+              <div className="rounded-xl p-3" style={{ background: "#f8fafc" }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <BarChart2
+                    className="w-3.5 h-3.5"
+                    style={{ color: "#7c3aed" }}
+                  />
+                  <span
+                    className="text-xs font-medium"
+                    style={{ color: "#64748b" }}
+                  >
+                    Zone
+                  </span>
+                </div>
+                <p className="text-lg font-bold" style={{ color: "#0f172a" }}>
+                  {zone}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+                  VM placement
+                </p>
+              </div>
             </div>
 
-            {/* Analytics badges */}
+            {/* Analytics badges — order: Stock Status, Perf Index, Inv Health, Rebuy Trigger, Vendor */}
             <div className="flex flex-wrap gap-3 mb-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs" style={{ color: "#94a3b8" }}>
-                  Perf. Index
-                </span>
-                <PerfBadge label={perfLabel} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs" style={{ color: "#94a3b8" }}>
-                  Rebuy Trigger
-                </span>
-                <TriggerBadge value={trigger} />
-              </div>
               <div className="flex flex-col gap-1">
                 <span className="text-xs" style={{ color: "#94a3b8" }}>
                   Stock Status
@@ -445,9 +433,21 @@ function StyleCard({
               </div>
               <div className="flex flex-col gap-1">
                 <span className="text-xs" style={{ color: "#94a3b8" }}>
+                  Perf. Index
+                </span>
+                <PerfBadge label={perfLabel} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs" style={{ color: "#94a3b8" }}>
                   Inv. Health
                 </span>
                 <HealthBadge label={healthLabel} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs" style={{ color: "#94a3b8" }}>
+                  Rebuy Trigger
+                </span>
+                <TriggerBadge value={trigger} />
               </div>
               {kpi.vendor && (
                 <div className="flex flex-col gap-1">
@@ -470,7 +470,7 @@ function StyleCard({
               style={{
                 background: "#fefce8",
                 color: "#92400e",
-                borderLeft: "3px solid #d97706",
+                borderLeft: "2px solid #d97706",
               }}
             >
               {recommendation}
@@ -492,7 +492,7 @@ function StylePhoto({
       src={imageUrl}
       alt={styleCode}
       className="w-14 h-16 rounded-lg object-cover"
-      style={{ border: "1px solid #e2e8f0" }}
+      style={{ border: "0.5px solid #edf0f4" }}
       onError={(e) => {
         const img = e.currentTarget as HTMLImageElement;
         if (!img.src.endsWith(".png")) {
@@ -503,7 +503,7 @@ function StylePhoto({
           img.style.display = "none";
           const wrapper = img.parentElement;
           if (wrapper) {
-            wrapper.innerHTML = `<div style="width:56px;height:64px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;border:1px solid #e2e8f0">
+            wrapper.innerHTML = `<div style="width:56px;height:64px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;border:0.5px solid #edf0f4">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#cbd5e1" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
             </div>`;
           }
@@ -754,14 +754,14 @@ export function StyleAnalysis() {
                       {[
                         "Photo",
                         "Style",
-                        "Zone",
+                        "Action",
+                        "Stock Status",
+                        "Perf. Index",
                         "ROS",
                         "Sell-Through",
                         "Sales",
-                        "Perf. Index",
+                        "Zone",
                         "Rebuy Trigger",
-                        "Stock Status",
-                        "Action",
                         "Inv. Health",
                         "Recommendation",
                       ].map((h) => (
@@ -809,11 +809,13 @@ export function StyleAnalysis() {
                               : idx % 2 === 1
                                 ? "#f8fafc"
                                 : "white",
-                            outline: isSelected ? "2px solid #d97706" : "none",
+                            outline: isSelected
+                              ? "1.5px solid #d97706"
+                              : "none",
                           }}
                           onClick={() => setSelectedStyleCode(k.styleCode)}
                         >
-                          {/* Photo */}
+                          {/* 1. Photo */}
                           <TableCell className="py-2">
                             <StylePhoto
                               imageUrl={imageUrl}
@@ -821,7 +823,7 @@ export function StyleAnalysis() {
                             />
                           </TableCell>
 
-                          {/* Style */}
+                          {/* 2. Style */}
                           <TableCell className="min-w-[140px]">
                             <p
                               className="text-xs font-mono font-bold"
@@ -846,20 +848,41 @@ export function StyleAnalysis() {
                             </span>
                           </TableCell>
 
-                          {/* Zone */}
-                          <TableCell className="min-w-[80px]">
-                            <span
-                              className="text-xs px-2 py-1 rounded-full font-medium"
-                              style={{
-                                background: "#ede9fe",
-                                color: "#5b21b6",
-                              }}
-                            >
-                              {zone}
-                            </span>
+                          {/* 3. Action */}
+                          <TableCell>
+                            <ActionBadge value={action} />
                           </TableCell>
 
-                          {/* ROS */}
+                          {/* 4. Stock Status */}
+                          <TableCell>
+                            <StockBadge value={stockStatus} />
+                            <p
+                              className="text-xs mt-1"
+                              style={{ color: "#94a3b8" }}
+                            >
+                              {k.inventoryCoverWeeks.toFixed(1)} wks
+                            </p>
+                          </TableCell>
+
+                          {/* 5. Perf. Index */}
+                          <TableCell className="min-w-[140px]">
+                            <PerfBadge label={perfLabel} />
+                            <p
+                              className="text-xs mt-1"
+                              style={{ color: "#94a3b8" }}
+                            >
+                              Index: {perfIdx}×
+                            </p>
+                            <p
+                              className="text-xs mt-0.5"
+                              style={{ color: "#94a3b8" }}
+                            >
+                              4W ROS: {ros4w.toFixed(1)} | Cat Avg:{" "}
+                              {categoryAvgRos.toFixed(1)}
+                            </p>
+                          </TableCell>
+
+                          {/* 6. ROS */}
                           <TableCell className="min-w-[90px]">
                             <p
                               className="text-xs font-semibold"
@@ -881,14 +904,14 @@ export function StyleAnalysis() {
                             </p>
                           </TableCell>
 
-                          {/* Sell-Through */}
+                          {/* 7. Sell-Through */}
                           <TableCell className="min-w-[100px]">
                             <div className="flex flex-col gap-1">
                               <p
                                 className="text-xs font-semibold"
                                 style={{ color: "#0f172a" }}
                               >
-                                {k.sellThroughPct}%
+                                {k.sellThroughPct.toFixed(2)}%
                               </p>
                               <div
                                 className="w-16 h-1.5 rounded-full overflow-hidden"
@@ -910,7 +933,7 @@ export function StyleAnalysis() {
                             </div>
                           </TableCell>
 
-                          {/* Sales */}
+                          {/* 8. Sales */}
                           <TableCell className="min-w-[80px]">
                             <p
                               className="text-xs font-semibold"
@@ -923,51 +946,30 @@ export function StyleAnalysis() {
                             </p>
                           </TableCell>
 
-                          {/* Perf. Index */}
-                          <TableCell className="min-w-[140px]">
-                            <PerfBadge label={perfLabel} />
-                            <p
-                              className="text-xs mt-1"
-                              style={{ color: "#94a3b8" }}
+                          {/* 9. Zone */}
+                          <TableCell className="min-w-[80px]">
+                            <span
+                              className="text-xs px-2 py-1 rounded-full font-medium"
+                              style={{
+                                background: "#ede9fe",
+                                color: "#5b21b6",
+                              }}
                             >
-                              Index: {perfIdx}×
-                            </p>
-                            <p
-                              className="text-xs mt-0.5"
-                              style={{ color: "#94a3b8" }}
-                            >
-                              4W ROS: {ros4w.toFixed(1)} | Cat Avg:{" "}
-                              {categoryAvgRos.toFixed(1)}
-                            </p>
+                              {zone}
+                            </span>
                           </TableCell>
 
-                          {/* Rebuy Trigger */}
+                          {/* 10. Rebuy Trigger */}
                           <TableCell>
                             <TriggerBadge value={trigger} />
                           </TableCell>
 
-                          {/* Stock Status */}
-                          <TableCell>
-                            <StockBadge value={stockStatus} />
-                            <p
-                              className="text-xs mt-1"
-                              style={{ color: "#94a3b8" }}
-                            >
-                              {k.inventoryCoverWeeks.toFixed(1)} wks
-                            </p>
-                          </TableCell>
-
-                          {/* Action */}
-                          <TableCell>
-                            <ActionBadge value={action} />
-                          </TableCell>
-
-                          {/* Inv. Health */}
+                          {/* 11. Inv. Health */}
                           <TableCell>
                             <HealthBadge label={healthLabel} />
                           </TableCell>
 
-                          {/* Recommendation */}
+                          {/* 12. Recommendation */}
                           <TableCell className="min-w-[200px]">
                             <p
                               className="text-xs italic"
