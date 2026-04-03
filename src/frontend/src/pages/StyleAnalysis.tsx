@@ -30,6 +30,18 @@ import { Layout } from "../components/Layout";
 import { useData } from "../context/DataContext";
 import type { KPIResult } from "../types/index";
 
+// ── Image URL resolver ─────────────────────────────────────────────────
+// Priority: vmDeckData override → bundled static .jpeg → (onError tries .png)
+function getStyleImageUrl(
+  styleCode: string,
+  vmDeckData: Record<string, { imageUrl?: string; zone?: string }>,
+): string {
+  const vmEntry = vmDeckData[styleCode];
+  if (vmEntry?.imageUrl) return vmEntry.imageUrl;
+  // Fall back to bundled static image (jpeg; onError will try png)
+  return `/assets/style-images/${styleCode}.jpeg`;
+}
+
 // ── Derived metric helpers ─────────────────────────────────────────────
 
 function getZoneAvgRos(k: KPIResult, allKPIs: KPIResult[]): number {
@@ -190,11 +202,13 @@ function StyleCard({
   kpi,
   allKPIs,
   imageUrl,
+  styleCode,
   zone,
 }: {
   kpi: KPIResult;
   allKPIs: KPIResult[];
-  imageUrl: string | undefined;
+  imageUrl: string;
+  styleCode: string;
   zone: string;
 }) {
   const ros4w = kpi.ros4Week ?? kpi.ros;
@@ -221,45 +235,35 @@ function StyleCard({
               borderRight: "1px solid #e2e8f0",
             }}
           >
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={kpi.styleCode}
-                className="object-contain"
-                style={{
-                  maxWidth: "220px",
-                  maxHeight: "300px",
-                  width: "100%",
-                  height: "auto",
-                  display: "block",
-                  padding: "12px",
-                }}
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                  const parent = (e.currentTarget as HTMLImageElement)
-                    .parentElement;
+            <img
+              src={imageUrl}
+              alt={styleCode}
+              className="object-contain"
+              style={{
+                maxWidth: "220px",
+                maxHeight: "300px",
+                width: "100%",
+                height: "auto",
+                display: "block",
+                padding: "12px",
+              }}
+              onError={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                if (!img.src.endsWith(".png")) {
+                  // Try .png variant before giving up
+                  img.src = `/assets/style-images/${styleCode}.png`;
+                } else {
+                  img.style.display = "none";
+                  const parent = img.parentElement;
                   if (parent) {
                     parent.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#cbd5e1">
                       <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                       <span style="font-size:12px;color:#94a3b8">No image</span>
                     </div>`;
                   }
-                }}
-              />
-            ) : (
-              <div
-                className="flex flex-col items-center justify-center gap-3"
-                style={{ color: "#cbd5e1" }}
-              >
-                <ImageIcon className="w-12 h-12" />
-                <p
-                  className="text-xs text-center px-4"
-                  style={{ color: "#94a3b8" }}
-                >
-                  Upload VM Deck to see style photo
-                </p>
-              </div>
-            )}
+                }
+              }}
+            />
           </div>
 
           {/* Info Panel */}
@@ -482,17 +486,7 @@ function StyleCard({
 function StylePhoto({
   imageUrl,
   styleCode,
-}: { imageUrl?: string; styleCode: string }) {
-  if (!imageUrl) {
-    return (
-      <div
-        className="w-14 h-16 rounded-lg flex flex-col items-center justify-center gap-1"
-        style={{ background: "#f1f5f9" }}
-      >
-        <ImageIcon className="w-5 h-5" style={{ color: "#cbd5e1" }} />
-      </div>
-    );
-  }
+}: { imageUrl: string; styleCode: string }) {
   return (
     <img
       src={imageUrl}
@@ -500,7 +494,20 @@ function StylePhoto({
       className="w-14 h-16 rounded-lg object-cover"
       style={{ border: "1px solid #e2e8f0" }}
       onError={(e) => {
-        (e.currentTarget as HTMLImageElement).style.display = "none";
+        const img = e.currentTarget as HTMLImageElement;
+        if (!img.src.endsWith(".png")) {
+          // Try .png variant before showing placeholder icon
+          img.src = `/assets/style-images/${styleCode}.png`;
+        } else {
+          // Both .jpeg and .png failed — render a placeholder div
+          img.style.display = "none";
+          const wrapper = img.parentElement;
+          if (wrapper) {
+            wrapper.innerHTML = `<div style="width:56px;height:64px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;border:1px solid #e2e8f0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#cbd5e1" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            </div>`;
+          }
+        }
       }}
     />
   );
@@ -547,9 +554,12 @@ export function StyleAnalysis() {
     return found ?? displayed[0];
   }, [displayed, selectedStyleCode]);
 
-  const selectedVMEntry = selectedKPI
-    ? vmDeckData[selectedKPI.styleCode]
+  const selectedImageUrl = selectedKPI
+    ? getStyleImageUrl(selectedKPI.styleCode, vmDeckData)
     : undefined;
+  const selectedZone = selectedKPI
+    ? vmDeckData[selectedKPI.styleCode]?.zone || selectedKPI.category
+    : "—";
 
   return (
     <Layout title="Style Analysis – Decision Intelligence">
@@ -696,8 +706,9 @@ export function StyleAnalysis() {
           <StyleCard
             kpi={selectedKPI}
             allKPIs={filteredKPIs}
-            imageUrl={selectedVMEntry?.imageUrl}
-            zone={selectedVMEntry?.zone || selectedKPI.category}
+            imageUrl={selectedImageUrl!}
+            styleCode={selectedKPI.styleCode}
+            zone={selectedZone}
           />
         </motion.div>
       ) : (
@@ -781,9 +792,11 @@ export function StyleAnalysis() {
                       );
                       const ros4w = k.ros4Week ?? k.ros;
 
-                      const vmEntry = vmDeckData[k.styleCode];
-                      const imageUrl = vmEntry?.imageUrl;
-                      const zone = vmEntry?.zone || k.category;
+                      const zone = vmDeckData[k.styleCode]?.zone || k.category;
+                      const imageUrl = getStyleImageUrl(
+                        k.styleCode,
+                        vmDeckData,
+                      );
                       const isSelected = selectedKPI?.styleCode === k.styleCode;
 
                       return (
