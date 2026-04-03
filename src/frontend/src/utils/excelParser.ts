@@ -212,6 +212,45 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     "GP%",
     "GP %",
   );
+  // Sell-through column
+  const colSellThrough = findCol(
+    headers1,
+    "Sell Through",
+    "Sell Through %",
+    "SELL THROUGH",
+    "SELL THROUGH %",
+    "ST%",
+    "ST %",
+    "Sell-Through",
+    "Sell-Through %",
+    "SellThrough",
+  );
+  // Sales / total sales units column
+  const colSalesUnits = findCol(
+    headers1,
+    "Sales",
+    "SALES",
+    "Sales Units",
+    "Sales Qty",
+    "SALES QTY",
+    "Total Sales",
+    "Net Sales",
+    "Units Sold",
+  );
+  // Current stock / on-hand column
+  const colStockUnits = findCol(
+    headers1,
+    "Stock",
+    "STOCK",
+    "Stock Units",
+    "Stock Qty",
+    "Closing Stock",
+    "Current Stock",
+    "On Hand",
+    "SOH",
+    "Inventory",
+  );
+
   const _colQty = findCol(
     headers1,
     "Qty",
@@ -276,11 +315,14 @@ export async function parseExcelFile(file: File): Promise<AppData> {
         allWeeks.length >= 4 ? allWeeks.slice(-4) : allWeeks,
       );
 
+      // Raw totals (not yet divided by weeks)
+      const rawSalesMap: Record<string, number> = {};
       for (const r of salesRows) {
         const code = toStr(getVal(r, sc2));
         if (!code) continue;
         const qty = toNum(getVal(r, sq2));
-        salesMap[code] = (salesMap[code] ?? 0) + qty;
+        rawSalesMap[code] = (rawSalesMap[code] ?? 0) + qty;
+        salesMap[code] = rawSalesMap[code]; // keep running total
         // Accumulate 4-week sales
         if (swk2) {
           const wk = toStr(getVal(r, swk2));
@@ -421,8 +463,6 @@ export async function parseExcelFile(file: File): Promise<AppData> {
 
   // First pass: collect values and compute invCoverWeeks
   // Excel inv cover column is ALWAYS in days → divide by 7 to get weeks.
-  // Exception: when invFromSheet === 0 and we compute from inventory/ROS,
-  // that result is already in weeks (stockQty / weeklyROS).
   const rawKpis = stylesRows.map((r) => {
     const code = toStr(getVal(r, colStyleCode));
     const rosFromSheet = colROS ? toNum(getVal(r, colROS)) : 0;
@@ -522,6 +562,33 @@ export async function parseExcelFile(file: File): Promise<AppData> {
 
       const vendor = colVendor ? toStr(getVal(r, colVendor)) : "";
 
+      // Sales, stock, and sell-through metrics
+      const totalSalesUnitsFromCol = colSalesUnits
+        ? toNum(getVal(r, colSalesUnits))
+        : 0;
+      const totalSalesUnits =
+        totalSalesUnitsFromCol > 0
+          ? totalSalesUnitsFromCol
+          : Math.round(ros * 12); // Estimate: 12 weeks of sales if not available
+      const currentStockUnitsFromCol = colStockUnits
+        ? toNum(getVal(r, colStockUnits))
+        : 0;
+      const currentStockUnits =
+        currentStockUnitsFromCol > 0
+          ? currentStockUnitsFromCol
+          : (inventoryMap[code] ?? Math.round(invCoverWeeks * ros));
+      const sellThroughFromCol = colSellThrough
+        ? toNum(getVal(r, colSellThrough))
+        : 0;
+      const sellThroughPct =
+        sellThroughFromCol > 0
+          ? sellThroughFromCol
+          : totalSalesUnits > 0 || currentStockUnits > 0
+            ? Math.round(
+                (totalSalesUnits / (totalSalesUnits + currentStockUnits)) * 100,
+              )
+            : 0;
+
       return {
         styleCode:
           code ||
@@ -537,6 +604,9 @@ export async function parseExcelFile(file: File): Promise<AppData> {
         buyingScore: Math.min(100, Math.max(0, buyingScore)),
         classification,
         rawFields,
+        totalSalesUnits,
+        currentStockUnits,
+        sellThroughPct,
       };
     })
     .filter((k) => k.styleCode !== "");
@@ -599,6 +669,8 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     col4WkROS && "4-Week ROS",
     colInvCover && "Inv Cover (days→wks)",
     colGM && "GM%",
+    colSellThrough && "Sell Through %",
+    colSalesUnits && "Sales Units",
     salesRows.length > 0 && "Sales (Sheet 2)",
     inventoryRows.length > 0 && "Inventory (Sheet 3)",
     sizeRows.length > 0 && "Sizes (Sheet 4)",
@@ -621,5 +693,6 @@ export async function parseExcelFile(file: File): Promise<AppData> {
     supplyChain,
     sizeData: sizeDataMap,
     analysisSummary,
+    vmDeckData: {}, // Populated separately via VM Deck upload
   };
 }

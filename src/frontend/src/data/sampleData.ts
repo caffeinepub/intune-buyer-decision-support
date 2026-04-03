@@ -32,8 +32,45 @@ const sizeTemplates: Record<string, SizeAllocation[]> = {
   ],
 };
 
+function makeKPI(
+  overrides: Partial<KPIResult> &
+    Pick<
+      KPIResult,
+      | "styleCode"
+      | "styleName"
+      | "season"
+      | "category"
+      | "vendor"
+      | "ros"
+      | "ros4Week"
+      | "inventoryCoverWeeks"
+      | "grossMarginPct"
+      | "buyingScore"
+      | "classification"
+    >,
+): KPIResult {
+  const totalSalesUnits =
+    overrides.totalSalesUnits ?? Math.round(overrides.ros * 12);
+  const currentStockUnits =
+    overrides.currentStockUnits ??
+    Math.round(overrides.inventoryCoverWeeks * overrides.ros);
+  const sellThroughPct =
+    overrides.sellThroughPct ??
+    (totalSalesUnits > 0 || currentStockUnits > 0
+      ? Math.round(
+          (totalSalesUnits / (totalSalesUnits + currentStockUnits)) * 100,
+        )
+      : 0);
+  return {
+    totalSalesUnits,
+    currentStockUnits,
+    sellThroughPct,
+    ...overrides,
+  };
+}
+
 export const sampleKPIs: KPIResult[] = [
-  {
+  makeKPI({
     styleCode: "SS25-TOP-001",
     styleName: "Linen Breezy Shirt",
     season: "SS25",
@@ -45,8 +82,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 62.5,
     buyingScore: 88,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS25-TOP-002",
     styleName: "Cotton Stripe Tee",
     season: "SS25",
@@ -58,8 +95,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 58.0,
     buyingScore: 74,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS25-BOT-001",
     styleName: "Slim Chino Pants",
     season: "SS25",
@@ -71,8 +108,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 55.0,
     buyingScore: 68,
     classification: "Monitor",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS25-BOT-002",
     styleName: "Wide Leg Denim",
     season: "SS25",
@@ -84,8 +121,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 64.0,
     buyingScore: 92,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS25-DRS-001",
     styleName: "Floral Midi Dress",
     season: "SS25",
@@ -97,8 +134,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 67.0,
     buyingScore: 85,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS25-DRS-002",
     styleName: "Wrap Maxi Dress",
     season: "SS25",
@@ -110,8 +147,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 48.0,
     buyingScore: 32,
     classification: "Do Not Re-buy",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS25-OUT-001",
     styleName: "Lightweight Blazer",
     season: "SS25",
@@ -123,8 +160,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 59.0,
     buyingScore: 61,
     classification: "Monitor",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW25-TOP-001",
     styleName: "Merino Wool Jumper",
     season: "AW25",
@@ -136,8 +173,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 66.0,
     buyingScore: 81,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW25-TOP-002",
     styleName: "Thermal Fleece Top",
     season: "AW25",
@@ -149,8 +186,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 52.0,
     buyingScore: 45,
     classification: "Monitor",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW25-BOT-001",
     styleName: "Tailored Trousers",
     season: "AW25",
@@ -162,8 +199,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 63.5,
     buyingScore: 90,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW25-BOT-002",
     styleName: "Corduroy Wide Pants",
     season: "AW25",
@@ -175,8 +212,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 44.0,
     buyingScore: 22,
     classification: "Do Not Re-buy",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW25-OUT-001",
     styleName: "Quilted Puffer Jacket",
     season: "AW25",
@@ -188,8 +225,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 70.0,
     buyingScore: 96,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW25-OUT-002",
     styleName: "Wool Blend Overcoat",
     season: "AW25",
@@ -201,8 +238,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 61.0,
     buyingScore: 72,
     classification: "Re-buy Candidate",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS24-TOP-001",
     styleName: "Broderie Anglaise Top",
     season: "SS24",
@@ -214,8 +251,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 40.0,
     buyingScore: 18,
     classification: "Do Not Re-buy",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "SS24-DRS-001",
     styleName: "Smocked Sundress",
     season: "SS24",
@@ -227,8 +264,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 56.0,
     buyingScore: 55,
     classification: "Monitor",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW24-OUT-001",
     styleName: "Faux Leather Biker Jacket",
     season: "AW24",
@@ -240,8 +277,8 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 58.0,
     buyingScore: 65,
     classification: "Monitor",
-  },
-  {
+  }),
+  makeKPI({
     styleCode: "AW24-TOP-001",
     styleName: "Cable Knit Cardigan",
     season: "AW24",
@@ -253,7 +290,7 @@ export const sampleKPIs: KPIResult[] = [
     grossMarginPct: 61.0,
     buyingScore: 83,
     classification: "Re-buy Candidate",
-  },
+  }),
 ];
 
 export const sampleSupplyChain: SupplyChainResult[] = [
@@ -449,4 +486,5 @@ export const initialData: AppData = {
   kpis: sampleKPIs,
   supplyChain: sampleSupplyChain,
   sizeData: {},
+  vmDeckData: {},
 };

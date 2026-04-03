@@ -6,22 +6,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle, Loader2, Upload, X } from "lucide-react";
+import { CheckCircle, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useData } from "../context/DataContext";
 import { parseExcelFile } from "../utils/excelParser";
+import { parseVMDeckFile } from "../utils/vmDeckParser";
 
 const UPLOAD_TOAST_ID = "upload-summary";
+const VM_TOAST_ID = "vm-deck-upload";
 
 interface TopBarProps {
   title: string;
 }
 
 export function TopBar({ title }: TopBarProps) {
-  const { filters, setFilters, seasons, categories, setData } = useData();
+  const { filters, setFilters, seasons, categories, setData, setVMDeckData } =
+    useData();
   const fileRef = useRef<HTMLInputElement>(null);
+  const vmFileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadingVM, setUploadingVM] = useState(false);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -39,14 +44,12 @@ export function TopBar({ title }: TopBarProps) {
               className="rounded-xl shadow-lg border p-4 max-w-sm w-full relative"
               style={{ background: "white", borderColor: "#e2e8f0" }}
             >
-              {/* Close button */}
               <button
                 type="button"
                 onClick={() => toast.dismiss(UPLOAD_TOAST_ID)}
                 className="absolute top-3 right-3 flex items-center justify-center rounded hover:bg-slate-100 transition-colors"
                 style={{ color: "#94a3b8", width: "20px", height: "20px" }}
                 aria-label="Dismiss"
-                data-ocid="upload_summary.close_button"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -118,6 +121,59 @@ export function TopBar({ title }: TopBarProps) {
     }
   }
 
+  async function handleVMFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingVM(true);
+    try {
+      const vmData = await parseVMDeckFile(file);
+      const count = Object.keys(vmData).length;
+      setVMDeckData(vmData);
+      toast.custom(
+        () => (
+          <div
+            className="rounded-xl shadow-lg border p-4 max-w-sm w-full relative"
+            style={{ background: "white", borderColor: "#e2e8f0" }}
+          >
+            <button
+              type="button"
+              onClick={() => toast.dismiss(VM_TOAST_ID)}
+              className="absolute top-3 right-3 flex items-center justify-center rounded hover:bg-slate-100 transition-colors"
+              style={{ color: "#94a3b8", width: "20px", height: "20px" }}
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-start gap-3 pr-5">
+              <CheckCircle
+                className="w-5 h-5 mt-0.5 shrink-0"
+                style={{ color: "#16a34a" }}
+              />
+              <div className="space-y-1">
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: "#0f172a" }}
+                >
+                  VM Deck loaded — {count} style images mapped
+                </p>
+                <p className="text-xs" style={{ color: "#64748b" }}>
+                  Style photos and zones are now visible in Style Analysis.
+                </p>
+              </div>
+            </div>
+          </div>
+        ),
+        { id: VM_TOAST_ID, duration: 6000 },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(`Failed to parse VM Deck file: ${msg}`);
+    } finally {
+      setUploadingVM(false);
+      if (vmFileRef.current) vmFileRef.current.value = "";
+    }
+  }
+
   return (
     <header
       className="sticky top-0 z-30 flex items-center justify-between px-6 py-3 border-b"
@@ -127,7 +183,7 @@ export function TopBar({ title }: TopBarProps) {
         {title}
       </h1>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {/* Season filter */}
         <Select
           value={filters.season}
@@ -170,13 +226,40 @@ export function TopBar({ title }: TopBarProps) {
           </SelectContent>
         </Select>
 
-        {/* Upload button */}
+        {/* VM Deck upload button */}
+        <input
+          ref={vmFileRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={handleVMFileChange}
+          data-ocid="topbar.vm_deck_input"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-xs gap-1.5"
+          style={{ borderColor: "#e2e8f0", color: "#64748b" }}
+          onClick={() => vmFileRef.current?.click()}
+          disabled={uploadingVM}
+          data-ocid="topbar.vm_deck_button"
+        >
+          {uploadingVM ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <ImageIcon className="w-3.5 h-3.5" />
+          )}
+          {uploadingVM ? "Loading..." : "Upload VM Deck"}
+        </Button>
+
+        {/* Main data upload button */}
         <input
           ref={fileRef}
           type="file"
           accept=".xlsx,.xls"
           className="hidden"
           onChange={handleFileChange}
+          data-ocid="topbar.upload_input"
         />
         <Button
           size="sm"

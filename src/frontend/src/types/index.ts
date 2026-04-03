@@ -25,6 +25,10 @@ export interface KPIResult {
   classification: Classification;
   // Additional raw fields captured from upload
   rawFields?: Record<string, string | number>;
+  // Sales & sell-through metrics
+  totalSalesUnits: number; // total sales qty from upload
+  currentStockUnits: number; // current stock qty from upload
+  sellThroughPct: number; // salesUnits / (salesUnits + stock) * 100
 }
 
 export interface SupplyChainResult {
@@ -68,9 +72,16 @@ export interface DashboardSummary {
   topCandidates: KPIResult[];
 }
 
+/** Entry from the VM Deck Excel: image URL and zone for a style */
+export interface VMDeckEntry {
+  imageUrl: string; // base64 data URL or /assets/style-images/ path
+  zone: string;
+}
+
 export interface AppData {
   kpis: KPIResult[];
   supplyChain: SupplyChainResult[];
   sizeData: Record<string, SizeAllocation[]>; // styleCode -> allocations
   analysisSummary?: AnalysisSummary;
+  vmDeckData: Record<string, VMDeckEntry>; // styleCode -> VMDeckEntry
 }
